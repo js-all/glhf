@@ -2,12 +2,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
 #include "glhelper.h"
 
 static const char* attributes[] = {
-    "vPos"/*,
+    "vPos",
     "vNormal",
-    "vTexCoord"*/
+    "vTexCoord"
 };
 
 int readFile(char* filename, int* size,char **content) {
@@ -39,8 +41,15 @@ int loadShader(char* filename, int type, GLuint *shader) {
     glShaderSource(*shader, 1, &shader_source, NULL);
     glCompileShader(*shader);
     GLint status;
+    GLenum error;
+    int logsLength;
+    error = glGetError();
     glGetShaderiv(*shader, GL_COMPILE_STATUS, &status);
-    printf("compiled shader %s, logs: %i (GL_TRUE: %i)\n", filename, status, GL_TRUE);
+    glGetShaderiv(*shader, GL_INFO_LOG_LENGTH, &logsLength);
+    char log[logsLength+1];
+    memset(log, '\0', logsLength+1);
+    glGetShaderInfoLog(*shader, logsLength, NULL, log);
+    printf("compiled shader %s, compile status: %i (GL_TRUE: %i), error: %i, logs: [%i]\n%s\n", filename, status, GL_TRUE, error, logsLength, log);
     free(source);
     return 0;
 }
@@ -52,7 +61,6 @@ int initProgram(char* fragSourceFilename, char* vertSourceFilename, GLuint *prog
     loadShader(fragSourceFilename, GL_FRAGMENT_SHADER, &frag);
     glAttachShader(*program, vert);
     glAttachShader(*program, frag);
-    GLint validated;
     GLint status;
     GLenum error;
     int logsLength;
@@ -61,10 +69,9 @@ int initProgram(char* fragSourceFilename, char* vertSourceFilename, GLuint *prog
     glGetProgramiv(*program, GL_LINK_STATUS, &status);
     glGetProgramiv(*program, GL_INFO_LOG_LENGTH, &logsLength);
     char logs[logsLength+1];
+    memset(logs, '\0', logsLength+1);
     glGetProgramInfoLog(*program, logsLength, NULL, logs);
-    glValidateProgram(*program);
-    glGetProgramiv(*program, GL_VALIDATE_STATUS, &validated);
-    printf("linking status: %i, validated: %i, error: %i, logs: [%i] \n%s\n", status, validated, error, logsLength, logs);
+    printf("linking status: %i, error: %i, logs: [%i] \n%s\n", status, error, logsLength, logs);
     return 0;
 }
 
@@ -113,6 +120,9 @@ void GlhInitContext(struct GlhContext *ctx, int windowWidth, int windowHeight, c
     ctx->camera.zNear = 0.1;
     ctx->camera.zFar = 100;
     vector_init(&ctx->children, 2, sizeof(void*));
+    int width, height;
+    glfwGetWindowSize(ctx->window, &width, &height);
+    glViewport(0, 0, width, height);
 }
 
 void GlhFreeContext(struct GlhContext *ctx) {
@@ -141,45 +151,36 @@ void GlhComputeContextProjectionMatrix(struct GlhContext *ctx) {
     float aspect = (float) width / (float) height;
     float f = tanf(M_PI * 0.5 - 0.5 * glm_rad(90));
     float fn = 1.0f / (ctx->camera.zNear - ctx->camera.zFar);
-    // mat4 p = {
-    //     {f / aspect, 0, 0, 0},
-    //     {0, f, 0, 0},
-    //     {0, 0, (ctx->camera.zNear + ctx->camera.zFar) * fn, -1},
-    //     {0, 0, ctx->camera.zNear * ctx->camera.zFar * fn * 2, 0}
-    // };
     mat4 p = {
-        {1, 0, 0, 0},
-        {0, 1, 0, 0},
-        {0, 0, 1, 1},
-        {0, 0, 0, 1}
+        {f / aspect, 0, 0, 0},
+        {0, f, 0, 0},
+        {0, 0, (ctx->camera.zNear + ctx->camera.zFar) * fn, -1},
+        {0, 0, ctx->camera.zNear * ctx->camera.zFar * fn * 2, 0}
     };
     glm_mat4_identity(ctx->cachedProjectionMatrix);
     glm_mat4_mul(ctx->cachedProjectionMatrix, p, ctx->cachedProjectionMatrix);
 }
 
 void GlhRenderObject(struct GlhObject *obj, struct GlhContext *ctx) {
-    int width, height;
-    glfwGetFramebufferSize(ctx->window, &width, &height);
     glUseProgram(obj->program->shaderProgram);
-    printf("glUseProgram, error: %i\n", glGetError());
     (*obj->program->setGlobalUniforms)(obj, ctx);
-    glViewport(0, 0, width, height);
+    glBindTexture(GL_TEXTURE_2D, obj->texture);
     glBindVertexArray(obj->mesh->bufferData.VAO);
-    printf("glBindVertexArray, error: %i\n", glGetError());
-    GLint validated;
-    glValidateProgram(obj->program->shaderProgram);
-    glGetProgramiv(obj->program->shaderProgram, GL_VALIDATE_STATUS, &validated);
-    printf("shader program validation: %i\n", validated);
     glDrawElements(GL_TRIANGLES, obj->mesh->bufferData.vertexCount, GL_UNSIGNED_INT, NULL);
-    printf("glDrawElements, error: %i\n", glGetError());
 }
 
 void GlhRenderContext(struct GlhContext *ctx) {
-    glClear(GL_COLOR_BUFFER_BIT);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     for(int i = 0; i < ctx->children.size; i++) {
         struct GlhObject* obj = vector_get(ctx->children.data, i, struct GlhObject*);
         GlhRenderObject(obj, ctx);
     }
+}
+
+void setAttribute(GLuint buffer, GLuint location, int comp) {
+    glBindBuffer(GL_ARRAY_BUFFER, buffer);
+    glVertexAttribPointer(location, comp, GL_FLOAT, GL_FALSE, 0, 0);
+    glEnableVertexAttribArray(location);
 }
 
 void GlhInitMesh(struct GlhMesh *mesh, vec3 verticies[], int verticiesCount, vec3 normals[], vec3 indices[], int indicesCount, vec2 texcoords[], int texcoordsCount) {
@@ -193,24 +194,15 @@ void GlhInitMesh(struct GlhMesh *mesh, vec3 verticies[], int verticiesCount, vec
     vector_push_array(mesh->normals, normals, verticiesCount);
     vector_push_array(mesh->indexes, indices, indicesCount);
     vector_push_array(mesh->texCoords, texcoords, texcoordsCount);
-    GlhGenerateMeshBuffers(mesh);
     glGenVertexArrays(1, &mesh->bufferData.VAO);
-    printf("glGenVertexArray, error: %i\n", glGetError());
     glBindVertexArray(mesh->bufferData.VAO);
-    #define attrib(type, buffer, loc, comp) \
-    glBindBuffer(GL_ARRAY_BUFFER, buffer); \
-    glVertexAttribPointer(loc, comp, GL_FLOAT, GL_FALSE, 0, 0); \
-    printf("glVertexAttribPointer: %i (no error = %i)\n", glGetError(), GL_NO_ERROR); \
-    glEnableVertexAttribArray(loc); \
-    printf("glEnableVertexAttribeArray: %i (no error = %i)\n", glGetError(), GL_NO_ERROR)
+    GlhGenerateMeshBuffers(mesh);
 
-    attrib(GL_FLOAT, mesh->bufferData.vertexBuffer, 0, 3);
-    // attrib(GL_FLOAT, obj->mesh->bufferData.normalBuffer, 1, 3);
-    // attrib(GL_FLOAT, obj->mesh->bufferData.tcoordBuffer, 2, 2);
+    setAttribute(mesh->bufferData.vertexBuffer, 0, 3);
+    setAttribute(mesh->bufferData.normalBuffer, 1, 3);
+    setAttribute(mesh->bufferData.tcoordBuffer, 2, 2);
 
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh->bufferData.indexsBuffer);
-    printf("glBindBuffer: %i\n", glGetError());
-    #undef attrib
 }
 
 void GlhFreeMesh(struct GlhMesh *mesh) {
@@ -220,7 +212,7 @@ void GlhFreeMesh(struct GlhMesh *mesh) {
     vector_free(&mesh->texCoords);
 }
 
-void GlhInitObject(struct GlhObject *obj, vec3 scale, vec3 rotation, vec3 translation, struct GlhMesh *mesh, struct GlhProgram *program) {
+void GlhInitObject(struct GlhObject *obj, GLuint texture, vec3 scale, vec3 rotation, vec3 translation, struct GlhMesh *mesh, struct GlhProgram *program) {
     struct GlhTransforms tsfm = {};
     glm_vec3_dup(scale, tsfm.scale);
     glm_vec3_dup(rotation, tsfm.rotation);
@@ -228,50 +220,77 @@ void GlhInitObject(struct GlhObject *obj, vec3 scale, vec3 rotation, vec3 transl
     obj->transforms = tsfm;
     obj->mesh = mesh;
     obj->program = program;
+    obj->texture = texture;
 }
 
 void GlhUpdateObjectModelMatrix(struct GlhObject *obj) {
     glm_mat4_identity(obj->cachedModelMatrix);
+    // don't ask me why, but that is the correct order
+    glm_translate(obj->cachedModelMatrix, obj->transforms.translation);
     glm_rotate_x(obj->cachedModelMatrix, obj->transforms.rotation[0], obj->cachedModelMatrix);
     glm_rotate_y(obj->cachedModelMatrix, obj->transforms.rotation[1], obj->cachedModelMatrix);
     glm_rotate_z(obj->cachedModelMatrix, obj->transforms.rotation[2], obj->cachedModelMatrix);
     glm_scale(obj->cachedModelMatrix, obj->transforms.scale);
-    glm_translate(obj->cachedModelMatrix, obj->transforms.translation);
 }
 
+void initArrayBuffer(GLuint *buffer, int components, Vector *vec, char* name) {
+    glGenBuffers(1, buffer);
+    glBindBuffer(GL_ARRAY_BUFFER, *buffer);
+    float array[vec->size * components];
+    for(int i = 0; i < (vec->size) * components; i += components) {
+        if(components == 2) {
+            array[i + 0] = vector_get(vec->data, i / components, vec2)[0];
+            array[i + 1] = vector_get(vec->data, i / components, vec2)[1];
+        } else {
+            array[i + 0] = vector_get(vec->data, i / components, vec3)[0];
+            array[i + 1] = vector_get(vec->data, i / components, vec3)[1];
+            array[i + 2] = vector_get(vec->data, i / components, vec3)[2];
+        }
+    }
+    glBufferData(GL_ARRAY_BUFFER, vec->size * components * sizeof(float), &array[0], GL_STATIC_DRAW);
+}
 
 void GlhGenerateMeshBuffers(struct GlhMesh *mesh) {
-    #define gbuffer(buffer, btype, components, arrName, vector, t, t2, h) \
-    glGenBuffers(1, &buffer); \
-    glBindBuffer(btype, buffer); \
-    t2 arrName[vector.size * components]; \
-    for(int i = 0; i < (vector.size) * components; i += components) { \
-        arrName[i] = (t2)(vector_get(vector.data, i / components, t)[0]); \
-        arrName[i+1] = (t2)(vector_get(vector.data, i / components, t)[1]); \
-        if(components > 2) \
-            arrName[i+2] = (t2)(vector_get(vector.data, i / components, t)[2]); \
-    } \
-    glBufferData(btype, vector.size * sizeof(unsigned int), &arrName[0], GL_STATIC_DRAW); \
-    printf(#arrName); \
-    printf(": "); \
-    for(int i = 0; i < sizeof(arrName) / sizeof(arrName[0]); i++) { \
-        printf(h, arrName[i]); \
-        if((float)((i+1) / components) - ((float) (i+1)) / (float)(components) == 0.0) { \
-            printf(", "); \
-        } \
-    } \
-    printf("\n");
 
-    gbuffer(mesh->bufferData.vertexBuffer, GL_ARRAY_BUFFER, 3, verticies, mesh->verticies, vec3, float, " %f");
-    gbuffer(mesh->bufferData.normalBuffer, GL_ARRAY_BUFFER, 3, normals, mesh->normals, vec3, float, " %f");
-    gbuffer(mesh->bufferData.indexsBuffer, GL_ELEMENT_ARRAY_BUFFER, 3, indexes, mesh->indexes, vec3, int, " %i");
-    gbuffer(mesh->bufferData.tcoordBuffer, GL_ARRAY_BUFFER, 2, texcoords, mesh->texCoords, vec2, float, " %f");
+    initArrayBuffer(&mesh->bufferData.vertexBuffer, 3, &mesh->verticies, "verticies");
+    initArrayBuffer(&mesh->bufferData.normalBuffer, 3, &mesh->normals, "normals");
+    initArrayBuffer(&mesh->bufferData.tcoordBuffer, 2, &mesh->texCoords, "texture coordinates");
 
-
+    glGenBuffers(1, &mesh->bufferData.indexsBuffer);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh->bufferData.indexsBuffer);
+    int indexes[mesh->indexes.size * 3];
+    for (int i = 0; i < (mesh->indexes.size) * 3; i += 3) {
+        indexes[i + 0] = (int)(vector_get(mesh->indexes.data, i/3, vec3)[0]);
+        indexes[i + 1] = (int)(vector_get(mesh->indexes.data, i/3, vec3)[1]);
+        indexes[i + 2] = (int)(vector_get(mesh->indexes.data, i/3, vec3)[2]);
+    }
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, mesh->indexes.size * 3 * sizeof(unsigned int), &indexes[0], GL_STATIC_DRAW);
+    printf("dfsgùmlikdfg %i\n", mesh->indexes.size);
     mesh->bufferData.vertexCount = mesh->indexes.size * 3;
-    #undef gbuffer
 }
 
+
 void GlhFreeObject(struct GlhObject *obj) {
-    //GlhFreeMesh(obj->mesh);
+    
+}
+
+int loadTexture(GLuint *texture, char* filename) {
+    glGenTextures(1, texture);
+    glBindTexture(GL_TEXTURE_2D, *texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    int width, height, nrChannels;
+    unsigned char* data = stbi_load(filename, &width, &height, &nrChannels, 0);
+    if(data) {
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
+        glGenerateMipmap(GL_TEXTURE_2D);
+    } else {
+        printf("unable to load image\n");
+        return -1;
+    }
+    stbi_image_free(data);
+    return 0;
 }

@@ -42,6 +42,7 @@ struct GlhObject {
     struct GlhMesh *mesh;
     struct GlhProgram *program;
     mat4 cachedModelMatrix;
+    GLuint texture;
 };
 
 struct GlhContext {
@@ -72,6 +73,7 @@ void GlhInitMesh(struct GlhMesh *mesh, vec3 verticies[], int verticiesCount, vec
 void GlhGenerateMeshBuffers(struct GlhMesh *mesh);
 void GlhFreeMesh(struct GlhMesh *mesh);
 void GlhRenderObject(struct GlhObject *obj, struct GlhContext *ctx);
-void GlhInitObject(struct GlhObject *obj, vec3 scale, vec3 rotation, vec3 translation, struct GlhMesh *mesh, struct GlhProgram *program);
+void GlhInitObject(struct GlhObject *obj, GLuint texture, vec3 scale, vec3 rotation, vec3 translation, struct GlhMesh *mesh, struct GlhProgram *program);
 void GlhUpdateObjectModelMatrix(struct GlhObject *obj);
 void GlhFreeObject(struct GlhObject *obj);
+int loadTexture(GLuint *texture, char* filename);

@@ -12,19 +12,11 @@
 
 struct GlhContext ctx;
 
-int tmp = -0;
-
 void setUniforms(struct GlhObject *obj, struct GlhContext *ctx) {
     mat4 mvp, mv;
     glm_mat4_mul(ctx->cachedViewMatrix, obj->cachedModelMatrix, mv);
     glm_mat4_mul(ctx->cachedProjectionMatrix, mv, mvp);
     glUniformMatrix4fv(vector_get(obj->program->uniformsLocation.data, 0, GLint), 1, GL_FALSE,(float*) mvp);
-    printf("glUniformMatrix4fv, error: %i\n", glGetError());
-    if(tmp < 1) {
-        printf("MVP matrix: ");
-        glm_mat4_print(mvp, stdout);
-        tmp++;
-    }
 }
 
 void handleDebugMessage(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* message, const void* userParam) { 
@@ -48,7 +40,7 @@ void handleDebugMessage(GLenum source, GLenum type, GLuint id, GLenum severity, 
 int main() {
     
     if(!glfwInit()) {
-        printf("glfwInit not found\n");
+        printf("glfw did not initialize\n");
         return -1;
     }
 
@@ -59,46 +51,62 @@ int main() {
     {
         vec3 verticies[] = {
             {-1, -1, -1},
+            {-1, 1, -1},
+            {1, 1, -1},
             {1, -1, -1},
-            {1, 1, -1}
+            {-1, -1, 1},
+            {-1, 1, 1},
+            {1, 1, 1},
+            {1, -1, 1}
         };
         vec3 normals[] = {
-            {0, 0, -1},
-            {0, 0, -1},
-            {0, 0, -1}
+            {0, 0, 1},
+            {0, 0, 1},
+            {0, 0, 1},
+            {0, 0, 1},
+            {0, 0, 1},
+            {0, 0, 1},
+            {0, 0, 1},
+            {0, 0, 1}
         };
         vec3 indices[] = {
-            {2, 1, 0}
+            {0, 1, 2}, {2, 3, 0}, {5, 1, 2}, {2, 6, 5}, {3, 2, 6}, {6, 7, 3}, {4, 0, 3}, {3, 7, 4}, {0, 1, 5}, {5, 4, 0}, {4, 5, 6}, {6, 7, 4}
         };
         vec2 texcoords[] = {
             {0, 0},
+            {0, 1},
+            {1, 1},
             {1, 0},
-            {1, 1}
+            {0, 0},
+            {0, 1},
+            {1, 1},
+            {1, 0}
         };
-        GlhInitMesh(&mesh, verticies, sizeof(verticies) / sizeof(verticies[0]), normals, indices, 1, texcoords, sizeof(texcoords) / sizeof(texcoords[0]));
+        GlhInitMesh(&mesh, verticies, sizeof(verticies) / sizeof(verticies[0]), normals, indices, sizeof(indices) / sizeof(indices[0]), texcoords, sizeof(texcoords) / sizeof(texcoords[0]));
         printf("\n");
     }
     char* uniforms[] = {
         "MVP"
     };
+    GLuint tex;
+    loadTexture(&tex, "images/texture.jpeg");
     printf("GL version: %s\n", glGetString(GL_VERSION));
     struct GlhProgram prg;
     glEnable(GL_DEBUG_OUTPUT);
     glDebugMessageCallback(handleDebugMessage, NULL);
     GlhInitProgram(&prg, "shaders/shader.frag", "shaders/shader.vert", uniforms, 1, setUniforms);
     struct GlhObject obj;
-    GlhInitObject(&obj, GLM_VEC3_ONE, GLM_VEC3_ZERO, GLM_VEC3_ZERO, &mesh, &prg);
-    obj.transforms.scale[0] = 0.8;
+    GlhInitObject(&obj,tex, GLM_VEC3_ONE, GLM_VEC3_ZERO, GLM_VEC3_ZERO, &mesh, &prg);
+    obj.transforms.translation[2] = -3;
     GlhContextAppendChild(&ctx, &obj);
 
     GlhComputeContextProjectionMatrix(&ctx);
-    
-    glDisable(GL_CULL_FACE);
-    glClearColor(1.0, 0.0, 0.0, 1.0);
-    while(!(glfwWindowShouldClose(ctx.window) || (tmp == 1))) {
+    glEnable(GL_DEPTH_TEST);
+    glClearColor(1.0, 1.0, 1.0, 1.0);
+    while(!(glfwWindowShouldClose(ctx.window))) {
         double time = glfwGetTime();
-        //obj.transforms.translation[2] = time;
-        //obj.transforms.rotation[1] = time / 50;
+        obj.transforms.rotation[2] = -time;
+        obj.transforms.rotation[1] = time;
         GlhComputeContextViewMatrix(&ctx);
         GlhUpdateObjectModelMatrix(&obj);
         GlhRenderContext(&ctx);
@@ -110,7 +118,6 @@ int main() {
     GlhFreeObject(&obj);
     GlhFreeProgram(&prg);
     GlhFreeContext(&ctx);
-
     glfwTerminate();
 
     return 0;
