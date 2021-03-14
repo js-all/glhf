@@ -45,42 +45,26 @@ int main() {
     }
 
     GlhInitContext(&ctx, 640, 480, "nothing here");
-
+    GLuint tex;
+    loadTexture(&tex, "images/tuxs.png");
+    ctx.camera.fov = glm_rad(45);
     struct GlhMesh mesh;
     // fill mesh
     {
         vec3 verticies[] = {
-            {-1, -1, -1},
-            {-1, 1, -1},
-            {1, 1, -1},
-            {1, -1, -1},
-            {-1, -1, 1},
-            {-1, 1, 1},
-            {1, 1, 1},
-            {1, -1, 1}
+            {-1, -1, 0}, {-1, 1, 0}, {1, 1, 0}, {1, -1, 0}
         };
         vec3 normals[] = {
-            {0, 0, 1},
-            {0, 0, 1},
-            {0, 0, 1},
-            {0, 0, 1},
             {0, 0, 1},
             {0, 0, 1},
             {0, 0, 1},
             {0, 0, 1}
         };
         vec3 indices[] = {
-            {0, 1, 2}, {2, 3, 0}, {5, 1, 2}, {2, 6, 5}, {3, 2, 6}, {6, 7, 3}, {4, 0, 3}, {3, 7, 4}, {0, 1, 5}, {5, 4, 0}, {4, 5, 6}, {6, 7, 4}
+            {0, 1, 2}, {0, 2, 3}
         };
         vec2 texcoords[] = {
-            {0, 0},
-            {0, 1},
-            {1, 1},
-            {1, 0},
-            {0, 0},
-            {0, 1},
-            {1, 1},
-            {1, 0}
+            {0, 0}, {0, 1}, {1, 1}, {1, 0}
         };
         GlhInitMesh(&mesh, verticies, sizeof(verticies) / sizeof(verticies[0]), normals, indices, sizeof(indices) / sizeof(indices[0]), texcoords, sizeof(texcoords) / sizeof(texcoords[0]));
         printf("\n");
@@ -88,8 +72,6 @@ int main() {
     char* uniforms[] = {
         "MVP"
     };
-    GLuint tex;
-    loadTexture(&tex, "images/texture.jpeg");
     printf("GL version: %s\n", glGetString(GL_VERSION));
     struct GlhProgram prg;
     glEnable(GL_DEBUG_OUTPUT);
@@ -98,15 +80,18 @@ int main() {
     struct GlhObject obj;
     GlhInitObject(&obj,tex, GLM_VEC3_ONE, GLM_VEC3_ZERO, GLM_VEC3_ZERO, &mesh, &prg);
     obj.transforms.translation[2] = -3;
+    glm_vec3_scale(obj.transforms.scale, 2.5, obj.transforms.scale);
     GlhContextAppendChild(&ctx, &obj);
 
     GlhComputeContextProjectionMatrix(&ctx);
     glEnable(GL_DEPTH_TEST);
     glClearColor(1.0, 1.0, 1.0, 1.0);
+    double time;
     while(!(glfwWindowShouldClose(ctx.window))) {
-        double time = glfwGetTime();
-        obj.transforms.rotation[2] = -time;
-        obj.transforms.rotation[1] = time;
+        time = glfwGetTime();
+        obj.transforms.rotation[1] = time / 2;
+        obj.transforms.rotation[0] = time / 3;
+        obj.transforms.rotation[2] = -time / 4;
         GlhComputeContextViewMatrix(&ctx);
         GlhUpdateObjectModelMatrix(&obj);
         GlhRenderContext(&ctx);

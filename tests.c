@@ -1,3 +1,7 @@
+// verry dirty code to test the features of thinhgs like vectors
+// and make sure they work as intended before using them in the
+// main codebase, to avoid having to debug two messes at once.
+
 #include "vector.h"
 #include <stdio.h>
 #include <stdlib.h>
