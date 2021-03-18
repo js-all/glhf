@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #endif
 // used to get elements from vector needs a define because vectors don't have types
-#define vector_get(vectordata, index, type) (*(type*)vectordata[index])
+#define vector_get(vectordata, index, type) (((type*)vectordata)[index])
 #define vector_push_array(vector, array, size) \
 for(int _i = 0; _i < size; _i++) { \
     vector_push(&vector, &array[_i]); \
@@ -16,7 +16,7 @@ for(int _i = 0; _i < vector.size; _i++) { \
 // there to make sure pointers always point somewhere)
 // NOTE: pretty inefficient when storing pointers
 struct Vector {
-    void** data;
+    void* data;
     int size;
     int allocated;
     // needed to allocated memory for elements
