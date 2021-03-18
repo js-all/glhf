@@ -148,6 +148,7 @@ void GlhInitContext(struct GlhContext *ctx, int windowWidth, int windowHeight, c
     glm_vec3_zero(ctx->camera.rotation);
     ctx->camera.zNear = 0.1;
     ctx->camera.zFar = 100;
+    ctx->camera.perspective = true;
     // init children vector
     vector_init(&ctx->children, 2, sizeof(void*));
     // get window width and height
@@ -184,22 +185,38 @@ void GlhComputeContextViewMatrix(struct GlhContext *ctx) {
 void GlhComputeContextProjectionMatrix(struct GlhContext *ctx) { 
     //TODO add this computation as well to a resize hook
     // get window width and height to compute the aspect
+    #define zn ctx->camera.zNear
+    #define zf ctx->camera.zFar
     int width, height;
     glfwGetFramebufferSize(ctx->window, &width, &height);
-    //* yes, i know cglm already include a perspective function, but it seems to be broken while that works
-    // compute projection matrix
     float aspect = (float) width / (float) height;
-    float f = tanf(M_PI * 0.5 - 0.5 * glm_rad(90));
-    float fn = 1.0f / (ctx->camera.zNear - ctx->camera.zFar);
+    float f = tanf(M_PI_2 - 0.5*ctx->camera.fov);
     mat4 p = {
         {f / aspect, 0, 0, 0},
-        {0, f, 0, 0},
-        {0, 0, (ctx->camera.zNear + ctx->camera.zFar) * fn, -1},
-        {0, 0, ctx->camera.zNear * ctx->camera.zFar * fn * 2, 0}
+        {     0,     f, 0, 0},
+        {     0,     0, 0, 0},
+        {     0,     0, 0, 0}
     };
+    // compute projection matrix
+    if(ctx->camera.perspective) {
+        //* yes, i know cglm already include a perspective function, but it seems to be broken while that works
+        float fn = 1.0f / (zn - zf);
+        p[2][2] = (zn + zf) * fn;
+        p[2][3] = -1;
+        p[3][2] = zn * zf * fn * 2; 
+        p[3][3] = 0;                       
+    } else {
+        float fn = 1.0 / (zf - zn);
+        p[2][2] = 2 * fn;
+        p[2][3] = 0;
+        p[3][2] = 2 * zn * fn + 1;
+        p[3][3] = 1;
+    }
     // dirty way of setting cachedProjectionMatrix to p
     glm_mat4_identity(ctx->cachedProjectionMatrix);
     glm_mat4_mul(ctx->cachedProjectionMatrix, p, ctx->cachedProjectionMatrix);
+    #undef zn
+    #undef zf
 }
 
 void GlhRenderObject(struct GlhObject *obj, struct GlhContext *ctx) {

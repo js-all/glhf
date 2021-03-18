@@ -9,6 +9,7 @@
 struct GlhCamera {
     vec3 position;
     vec3 rotation;
+    bool perspective;
     float fov;
     float zNear;
     float zFar;
@@ -61,8 +62,8 @@ struct GlhProgram {
     Vector attributes;
     GLuint shaderProgram; 
     // a function pointer for a function setting the uniforms to their correct values.
-    // it is not directly implement in the helper as no shaders are provided by default
-    // and ass such should be dealt with by the user
+    // it is not directly implemented in the helper as no shaders are provided by default
+    // and as such should be dealt with by the user
     void (*setGlobalUniforms)(struct GlhObject*, struct GlhContext*);
 };
 

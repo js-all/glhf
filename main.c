@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -79,19 +80,15 @@ int main() {
     GlhInitProgram(&prg, "shaders/shader.frag", "shaders/shader.vert", uniforms, 1, setUniforms);
     struct GlhObject obj;
     GlhInitObject(&obj,tex, GLM_VEC3_ONE, GLM_VEC3_ZERO, GLM_VEC3_ZERO, &mesh, &prg);
-    obj.transforms.translation[2] = -3;
-    glm_vec3_scale(obj.transforms.scale, 2.5, obj.transforms.scale);
+    glm_vec3_scale(obj.transforms.scale, 0.5, obj.transforms.scale);
+    obj.transforms.translation[2] = -1;
     GlhContextAppendChild(&ctx, &obj);
-
+    ctx.camera.perspective = false;
     GlhComputeContextProjectionMatrix(&ctx);
-    glEnable(GL_DEPTH_TEST);
     glClearColor(1.0, 1.0, 1.0, 1.0);
     double time;
     while(!(glfwWindowShouldClose(ctx.window))) {
         time = glfwGetTime();
-        obj.transforms.rotation[1] = time / 2;
-        obj.transforms.rotation[0] = time / 3;
-        obj.transforms.rotation[2] = -time / 4;
         GlhComputeContextViewMatrix(&ctx);
         GlhUpdateObjectModelMatrix(&obj);
         GlhRenderContext(&ctx);
