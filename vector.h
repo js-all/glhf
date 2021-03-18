@@ -27,8 +27,11 @@ typedef struct Vector Vector;
 
 void vector_init(struct Vector *vec, int initSize, size_t dataSize);
 void vector_push(struct Vector *vec, void* data);
+void vector_insert_before(struct Vector *vec, void* data, int index);
+void vector_insert(struct Vector *vec, void* data);
 void vector_pop(struct Vector *vec, void* data);
 void vector_shift(struct Vector *vec, void* data);
+void vector_splice(struct Vector *vec, int start, int length);
 void vector_free(struct Vector *vec);
 // print the array as if elements where integers without newlines
 void vector_print_as_int(struct Vector *vec);

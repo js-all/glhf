@@ -24,6 +24,20 @@ void vector_push(struct Vector *vec, void* data) {
     memcpy(vec->data + (vec->size++) * vec->data_size, data, vec->data_size);
 }
 
+void vector_insert_before(struct Vector *vec, void* data, int index) {
+    // same as in puhs
+    if(vec->size >= vec->allocated)
+        vec->data = realloc(vec->data, (vec->allocated*=2) * vec->data_size);
+    if(index < vec->size)
+        memmove(vec->data + (index + 1) * vec->data_size, vec->data + index * vec->data_size, (vec->size - index) * vec->data_size);
+    vec->size++;
+    memcpy(vec->data + index * vec->data_size, data, vec->data_size);
+}
+
+void vector_insert(struct Vector *vec, void* data) {
+    vector_insert_before(vec, data, 0);
+}
+
 void vector_pop(struct Vector *vec, void* data) {
     // if data points somewhere, copy last element's data there
     // and decrements vec->size as well, which is all that is
@@ -41,6 +55,10 @@ void vector_shift(struct Vector *vec, void* data) {
         memcpy(data, vec->data, vec->data_size);
     if(--vec->size > 0)
         memmove(vec->data, vec->data + vec->data_size, vec->size * vec->data_size);
+}
+
+void vector_splice(struct Vector *vec, int start, int length) {
+    memmove(vec->data + start * vec->data_size, vec->data + (start + length) * vec->data_size, ((vec->size -= length) - start) * vec->data_size);
 }
 
 void vector_print_as_int(struct Vector *vec) {

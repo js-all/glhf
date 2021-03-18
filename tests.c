@@ -3,6 +3,7 @@
 // main codebase, to avoid having to debug two messes at once.
 
 #include "vector.h"
+#include "events.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -48,6 +49,25 @@ int main() {
     printf("vector state: ");
     vector_print_as_int(&v);
     printf("\n\n");
+    printf("6: testing insert\ninserting 0\n");
+    int data = 0;
+    vector_insert(&v, &data);
+    printf("new vector size: %i\nvector state: ", v.size);
+    vector_print_as_int(&v);
+    printf("\n\n");
+    printf("7: testing insert_before\ninserting 40 before index 3\n");
+    data = 40;
+    vector_insert_before(&v, &data, 3);
+    printf("new vector size: %i\nvector state: ", v.size);
+    vector_print_as_int(&v);
+    printf("\n\n");
+    printf("8: testing splice\nsplicing from index 3 for 2 element\n");
+    vector_splice(&v, 3, 2);
+    printf("new vector size: %i\nvector state: ", v.size);
+    vector_print_as_int(&v);
+    printf("\n\n");
     printf("freeing vector\n");
     vector_free(&v);
+    printf("\ntesting events\n\n");
+    struct EventBroadcaster ev;
 }
