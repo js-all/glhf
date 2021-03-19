@@ -24,6 +24,6 @@ run: build
 	@build/a.out
 
 test: tests.o vector.o events.o
-	gcc build/tests.o build/vector.o -o build/tests
+	gcc build/tests.o build/vector.o build/events.o -o build/tests
 	chmod +x build/tests
 	build/tests

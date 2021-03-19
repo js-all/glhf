@@ -1,6 +1,8 @@
 #ifndef size_t
 #include <stdlib.h>
 #endif
+#ifndef _VECTOR_H
+#define _VECTOR_H
 // used to get elements from vector needs a define because vectors don't have types
 #define vector_get(vectordata, index, type) (((type*)vectordata)[index])
 #define vector_push_array(vector, array, size) \
@@ -35,3 +37,4 @@ void vector_splice(struct Vector *vec, int start, int length);
 void vector_free(struct Vector *vec);
 // print the array as if elements where integers without newlines
 void vector_print_as_int(struct Vector *vec);
+#endif

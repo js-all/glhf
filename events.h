@@ -10,10 +10,11 @@ struct EventSubscriber {
 
 struct EventBroadcaster {
     int _eventIdSeed;
-    Vector subscibed_events;
+    Vector subscribers;
 };
 
 void events_init(struct EventBroadcaster *ev);
 void events_subscribe(struct EventBroadcaster *ev, char* eventName, void (*eventCallback)(void* arg), int* id);
 void events_unsubscribe(struct EventBroadcaster *ev, int id);
 void events_broadcast(struct EventBroadcaster *ev, char* eventName, void* arg);
+void events_free(struct EventBroadcaster *ev);

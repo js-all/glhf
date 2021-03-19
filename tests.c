@@ -7,6 +7,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+void eventsCallback1(void* arg) {
+    int a = *(int*)arg;
+    printf("event callback 1 called, arg: %i\n", a);
+}
+
+void eventsCallback2(void* arg) {
+    int a = *(int*)arg;
+    printf("event callback 2 called, arg: %i\n", a);
+}
+
 int main() {
     printf("\ntesting vector: basic int\n\n");
     printf("1: initializing vector with initial allocation 5\n");
@@ -68,6 +78,27 @@ int main() {
     printf("\n\n");
     printf("freeing vector\n");
     vector_free(&v);
-    printf("\ntesting events\n\n");
+    printf("\ntesting events\ninitializing EcentBroadcaster\n\n");
     struct EventBroadcaster ev;
+    events_init(&ev);
+    printf("1: testing events_subscribe\nsubscribing two events, one to \"event1\" the other to \"event2\"\n");
+    events_subscribe(&ev, "event1", eventsCallback1, NULL);
+    int e2id;
+    events_subscribe(&ev, "event2", eventsCallback2, &e2id);
+    printf("EventBroadcaster's subscribers size: %i\n\n", ev.subscribers.size);
+    printf("2: testing events_broadcast\nbroadcasting \"event1\" (arg = 12) and \"event2\" (arg = 6) \n");
+    int evl = 12;
+    events_broadcast(&ev, "event1", &evl);
+    evl = 6;
+    events_broadcast(&ev, "event2", &evl);
+    printf("\n\n3: testing events_unsubscribe\nunsubscribing 2nd subscribed event\n");
+    events_unsubscribe(&ev, e2id);
+    printf("new EventBroadcaster's subscribers size: %i\n\n", ev.subscribers.size);
+    printf("4: retesting events_broadcast after unsubscribing\nbroadcasting \"event1\" (arg = 12) and \"event2\" (arg = 6) \n");
+    evl = 12;
+    events_broadcast(&ev, "event1", &evl);
+    evl = 6;
+    events_broadcast(&ev, "event2", &evl);
+    printf("\nfreeing events...\n");
+    events_free(&ev);
 }
