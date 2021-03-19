@@ -157,6 +157,9 @@ void GlhInitContext(struct GlhContext *ctx, int windowWidth, int windowHeight, c
     // set viewport
     // TODO move those kind of lines to some kind of hook to a glfw resize event
     glViewport(0, 0, width, height);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glEnable(GL_DEPTH_TEST);
     #undef OPT
 }
 
@@ -352,7 +355,7 @@ void GlhGenerateMeshBuffers(struct GlhMesh *mesh) {
 // textures stored in vectors maybe)
 void GlhFreeObject(struct GlhObject *obj) {}
 
-int loadTexture(GLuint *texture, char* filename) {
+int loadTexture(GLuint *texture, char* filename, bool alpha) {
     // create, bind texture and set parameters
     glGenTextures(1, texture);
     glBindTexture(GL_TEXTURE_2D, *texture);
@@ -366,8 +369,9 @@ int loadTexture(GLuint *texture, char* filename) {
     stbi_set_flip_vertically_on_load(true);
     unsigned char* data = stbi_load(filename, &width, &height, &nrChannels, 0);
     if(data) {
+        GLenum format = alpha ? GL_RGBA : GL_RGB;
         // put image data in texture
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
+        glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
         // generate mipmap to make sampling faster
         glGenerateMipmap(GL_TEXTURE_2D);
     } else {

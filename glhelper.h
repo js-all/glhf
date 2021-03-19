@@ -91,4 +91,4 @@ void GlhInitObject(struct GlhObject *obj, GLuint texture, vec3 scale, vec3 rotat
 void GlhUpdateObjectModelMatrix(struct GlhObject *obj);
 void GlhFreeObject(struct GlhObject *obj);
 // used to load and setup a texture from a file
-int loadTexture(GLuint *texture, char* filename);
+int loadTexture(GLuint *texture, char* filename, bool alpha);

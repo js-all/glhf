@@ -47,7 +47,9 @@ int main() {
 
     GlhInitContext(&ctx, 640, 480, "nothing here");
     GLuint tex;
-    loadTexture(&tex, "images/tuxs.png");
+    GLuint tex2;
+    loadTexture(&tex, "images/tuxs.png", true);
+    loadTexture(&tex2, "images/texture.jpeg", false);
     ctx.camera.fov = glm_rad(45);
     struct GlhMesh mesh;
     // fill mesh
@@ -74,21 +76,40 @@ int main() {
         "MVP"
     };
     printf("GL version: %s\n", glGetString(GL_VERSION));
-    struct GlhProgram prg;
     glEnable(GL_DEBUG_OUTPUT);
     glDebugMessageCallback(handleDebugMessage, NULL);
+
+    struct GlhProgram prg;
     GlhInitProgram(&prg, "shaders/shader.frag", "shaders/shader.vert", uniforms, 1, setUniforms);
+
     struct GlhObject obj;
+    struct GlhObject ground;
     GlhInitObject(&obj,tex, GLM_VEC3_ONE, GLM_VEC3_ZERO, GLM_VEC3_ZERO, &mesh, &prg);
-    glm_vec3_scale(obj.transforms.scale, 0.5, obj.transforms.scale);
+    GlhInitObject(&ground, tex2, GLM_VEC3_ONE, GLM_VEC3_ZERO, GLM_VEC3_ZERO, &mesh, &prg);
+
+    glm_vec3_scale(obj.transforms.scale, 0.3, obj.transforms.scale);
     obj.transforms.translation[2] = -1;
+    obj.transforms.translation[1] = -0.05;
+    glm_vec3_scale(ground.transforms.scale, 1.4, ground.transforms.scale);
+    ground.transforms.rotation[0] = M_PI_2;
+    ground.transforms.rotation[2] = M_PI;
+    ground.transforms.translation[1] = -0.3;
+    ground.transforms.translation[2] = -2.1;
+    GlhUpdateObjectModelMatrix(&ground);
+    GlhContextAppendChild(&ctx, &ground);
     GlhContextAppendChild(&ctx, &obj);
-    ctx.camera.perspective = false;
+    //ctx.camera.perspective = false;
     GlhComputeContextProjectionMatrix(&ctx);
     glClearColor(1.0, 1.0, 1.0, 1.0);
     double time;
     while(!(glfwWindowShouldClose(ctx.window))) {
         time = glfwGetTime();
+        obj.transforms.rotation[1] = sin(time*1.5) * 0.1;
+        obj.transforms.rotation[2] = cos(time*1.5) * 0.05;
+        obj.transforms.scale[0] = ( sin(time*2+1) + 1) / 2 / 12 + 0.3;
+        obj.transforms.translation[0] = sin(time) / 4;
+        obj.transforms.translation[2] = cos(time) / 4 -1.5;
+        obj.transforms.translation[1] = fabs(cos(time* 4)) / 16;
         GlhComputeContextViewMatrix(&ctx);
         GlhUpdateObjectModelMatrix(&obj);
         GlhRenderContext(&ctx);
@@ -98,6 +119,7 @@ int main() {
 
     GlhFreeMesh(&mesh);
     GlhFreeObject(&obj);
+    GlhFreeObject(&ground);
     GlhFreeProgram(&prg);
     GlhFreeContext(&ctx);
     glfwTerminate();
