@@ -14,6 +14,13 @@ void vector_init(struct Vector *vec, int initSize, size_t dataSize) {
     vec->data_size = dataSize;
 }
 
+void vector_set(struct Vector *vec, void* data, unsigned int index) {
+    if(index < vec->size)
+        memcpy(vec->data + index * vec->data_size, data, vec->data_size);
+    else 
+        printf("WARN: trying to set vector element outside of the vector size.\n");
+}
+
 void vector_push(struct Vector *vec, void* data) {
     // if used size is larger than allocated
     if(vec->size >= vec->allocated) {

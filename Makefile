@@ -1,8 +1,8 @@
 CFLAGS=-Wall -g
-LDFLAGS=-lglfw -lGL -lm -lGLEW -lX11 -lGLU -DGLEW_STATIC
+LDFLAGS=-lglfw -lGL -lm -lGLEW -lX11 -lGLU -DGLEW_STATIC -lfreetype
 
-build: build/main.o build/vector.o build/glhelper.o build/events.o
-	gcc $(CFLAGS) -o build/a.out build/main.o build/vector.o build/events.o build/glhelper.o $(LDFLAGS)
+build: build/main.o build/vector.o build/glhelper.o build/maps.o build/events.o
+	gcc $(CFLAGS) -o build/a.out build/main.o build/vector.o build/events.o build/maps.o build/glhelper.o $(LDFLAGS)
 	chmod +x build/a.out
 
 build/main.o: main.c
@@ -13,6 +13,8 @@ build/vector.o: vector.c
 	gcc $(CFLAGS) -c vector.c -o build/vector.o $(LDFLAGS)
 build/events.o: events.c
 	gcc $(CFLAGS) -c events.c -o build/events.o $(LDFLAGS)
+build/maps.o: maps.c
+	gcc $(CFLAGS) -c maps.c -o build/maps.o $(LDFLAGS)
 build/tests.o: tests.c
 	gcc $(CFLAGS) -c tests.c -o build/tests.o $(LDFLAGS)
 clean:
@@ -23,7 +25,7 @@ run: build
 	@echo ""
 	@build/a.out
 
-test: build/tests.o build/vector.o build/events.o
-	gcc build/tests.o build/vector.o build/events.o -o build/tests
+test: build/tests.o build/vector.o build/events.o build/maps.o
+	gcc build/tests.o build/vector.o build/events.o build/maps.o -o build/tests
 	chmod +x build/tests
 	build/tests

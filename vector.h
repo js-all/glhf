@@ -28,6 +28,7 @@ struct Vector {
 typedef struct Vector Vector;
 
 void vector_init(struct Vector *vec, int initSize, size_t dataSize);
+void vector_set(struct Vector *vec, void* data, unsigned int index);
 void vector_push(struct Vector *vec, void* data);
 void vector_insert_before(struct Vector *vec, void* data, int index);
 void vector_insert(struct Vector *vec, void* data);

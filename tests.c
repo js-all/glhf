@@ -4,6 +4,7 @@
 
 #include "vector.h"
 #include "events.h"
+#include "maps.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -76,9 +77,15 @@ int main() {
     printf("new vector size: %i\nvector state: ", v.size);
     vector_print_as_int(&v);
     printf("\n\n");
+    printf("9: testing set\nsetting index 3 to 3\n");
+    data = 3;
+    vector_set(&v, &data, 3);
+    printf("vector state: ");
+    vector_print_as_int(&v);
+    printf("\n\n");
     printf("freeing vector\n");
     vector_free(&v);
-    printf("\ntesting events\ninitializing EcentBroadcaster\n\n");
+    printf("\ntesting events\ninitializing EventBroadcaster\n\n");
     struct EventBroadcaster ev;
     events_init(&ev);
     printf("1: testing events_subscribe\nsubscribing two events, one to \"event1\" the other to \"event2\"\n");
@@ -101,4 +108,30 @@ int main() {
     events_broadcast(&ev, "event2", &evl);
     printf("\nfreeing events...\n");
     events_free(&ev);
+    printf("\nTesting maps\ninitializing map\n\n");
+    Map map;
+    map_init(&map, sizeof(int));
+    printf("1: testing map_set\nsetting key \"key1\" to 25\n");
+    int mv = 25;
+    map_set(&map, "key1", &mv);
+    printf("map: ");
+    map_print(map, int, "%i");
+    printf("\n\n2: testing map_get\ngetting \"key1\"\n");
+    int mpv;
+    map_get(&map, "key1", &mpv);
+    printf("found value: %i\ntrying to get unset key \"key2\"\n", mpv);
+    map_get(&map, "key2", &mpv);
+    printf("found value: %i\n", mpv);
+    printf("map: ");
+    map_print(map, int, "%i");
+    printf("\n\n");
+    printf("3 testing map_delete\ntrying to delete unset key \"key2\"\n");
+    map_delete(&map, "key2");
+    printf("deleting key \"key1\"\n");
+    map_delete(&map, "key1");
+    printf("map: ");
+    map_print(map, int, "%i");
+    printf("\n\n");
+    printf("freeing map...\n");
+    map_free(&map);
 }

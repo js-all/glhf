@@ -3,6 +3,7 @@
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 #include "vector.h"
+#include "maps.h"
 
 //? should scale be a camera property ?, like a bigger camera displaying thing smaller
 // in that case GlhCamera should just include a GlhTransform property
@@ -38,7 +39,13 @@ struct GlhMesh {
     Vector texCoords;
 };
 
+enum GlhObjectTypes {
+    regular,
+    text
+};
+// here type must be the first member, to allow to check type before knowing what struct it is
 struct GlhObject {
+    enum GlhObjectTypes type;
     struct GlhTransforms transforms;
     // reference here, to be able to use the same mesh on multiple objects
     struct GlhMesh *mesh;
@@ -47,6 +54,35 @@ struct GlhObject {
     mat4 cachedModelMatrix;
     GLuint texture;
 };
+
+struct GlhFont {
+    GLuint texture;
+    Map glyphsData;
+};
+
+struct GlhFontGLyphData {
+    int x0;
+    int y0;
+    int x1;
+    int y1;
+    int x_off;
+    int y_off;
+    int advance;
+};
+
+struct GlhTextObject {
+    enum GlhObjectTypes type;
+    struct GlhFont *font;
+    char* _text;
+    vec4 color;
+    struct GlhTransforms transforms;
+    Vector verticies;
+    Vector uvs;
+    GLuint VAO;
+    GLuint vertBuffer;
+    GLuint uvsBuffer;
+};
+
 //! as of now, applications should only have a single context, and would probably break otherwise
 struct GlhContext {
     GLFWwindow *window;
@@ -92,3 +128,8 @@ void GlhUpdateObjectModelMatrix(struct GlhObject *obj);
 void GlhFreeObject(struct GlhObject *obj);
 // used to load and setup a texture from a file
 int loadTexture(GLuint *texture, char* filename, bool alpha);
+// initialize freetype, needs to be called before working with fonts, only once (or after freeing the last one)
+void GlhInitFreeType();
+// stops freetype should be called when every fonts has been initilized or at the end or execution
+void GlhFreeFreeType();
+void GlhInitFont(struct GlhFont *font, char* ttfFileName, int size, int glyphCount);

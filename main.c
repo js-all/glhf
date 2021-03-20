@@ -44,12 +44,14 @@ int main() {
         printf("glfw did not initialize\n");
         return -1;
     }
-
+    GlhInitFreeType();
     GlhInitContext(&ctx, 640, 480, "nothing here");
     GLuint tex;
     GLuint tex2;
     loadTexture(&tex, "images/tuxs.png", true);
     loadTexture(&tex2, "images/texture.jpeg", false);
+    struct GlhFont font;
+    GlhInitFont(&font, "fonts/Roboto-Regular.ttf", 64, 128);
     ctx.camera.fov = glm_rad(45);
     struct GlhMesh mesh;
     // fill mesh
@@ -84,7 +86,7 @@ int main() {
 
     struct GlhObject obj;
     struct GlhObject ground;
-    GlhInitObject(&obj,tex, GLM_VEC3_ONE, GLM_VEC3_ZERO, GLM_VEC3_ZERO, &mesh, &prg);
+    GlhInitObject(&obj,font.texture, GLM_VEC3_ONE, GLM_VEC3_ZERO, GLM_VEC3_ZERO, &mesh, &prg);
     GlhInitObject(&ground, tex2, GLM_VEC3_ONE, GLM_VEC3_ZERO, GLM_VEC3_ZERO, &mesh, &prg);
 
     glm_vec3_scale(obj.transforms.scale, 0.3, obj.transforms.scale);
@@ -122,6 +124,7 @@ int main() {
     GlhFreeObject(&ground);
     GlhFreeProgram(&prg);
     GlhFreeContext(&ctx);
+    GlhFreeFreeType();
     glfwTerminate();
 
     return 0;

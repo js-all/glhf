@@ -5,6 +5,8 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 #include "glhelper.h"
+#include <ft2build.h>
+#include FT_FREETYPE_H
 
 // list of the names of the vertex attributes
 static const char* attributes[] = {
@@ -12,6 +14,8 @@ static const char* attributes[] = {
     "vNormal",
     "vTexCoord"
 };
+
+FT_Library ft;
 
 int readFile(char* filename, int* size,char **content) {
 	FILE* file = fopen(filename, "rb");
@@ -90,6 +94,16 @@ int initProgram(char* fragSourceFilename, char* vertSourceFilename, GLuint *prog
     // print it
     printf("linking status: %i, error: %i, logs: [%i] \n%s\n", status, error, logsLength, logs);
     return 0;
+}
+
+void GlhTransformsToMat4(struct GlhTransforms *tsf, mat4 *mat) {
+    glm_mat4_identity(*mat);
+    // don't ask me why, but that is the correct order
+    glm_translate(*mat, tsf->translation);
+    glm_rotate_x(*mat, tsf->rotation[0], *mat);
+    glm_rotate_y(*mat, tsf->rotation[1], *mat);
+    glm_rotate_z(*mat, tsf->rotation[2], *mat);
+    glm_scale(*mat, tsf->scale);
 }
 
 void GlhInitProgram(struct GlhProgram *prg, char* fragSourceFilename, char* vertSourceFilename, char* uniforms[], int uniformsCount, void (*setUniforms)()) {
@@ -292,6 +306,7 @@ void GlhInitObject(struct GlhObject *obj, GLuint texture, vec3 scale, vec3 rotat
     glm_vec3_dup(rotation, tsfm.rotation);
     glm_vec3_dup(translation, tsfm.translation);
     // file GlhObject struct
+    obj->type = regular;
     obj->transforms = tsfm;
     obj->mesh = mesh;
     obj->program = program;
@@ -299,13 +314,7 @@ void GlhInitObject(struct GlhObject *obj, GLuint texture, vec3 scale, vec3 rotat
 }
 
 void GlhUpdateObjectModelMatrix(struct GlhObject *obj) {
-    glm_mat4_identity(obj->cachedModelMatrix);
-    // don't ask me why, but that is the correct order
-    glm_translate(obj->cachedModelMatrix, obj->transforms.translation);
-    glm_rotate_x(obj->cachedModelMatrix, obj->transforms.rotation[0], obj->cachedModelMatrix);
-    glm_rotate_y(obj->cachedModelMatrix, obj->transforms.rotation[1], obj->cachedModelMatrix);
-    glm_rotate_z(obj->cachedModelMatrix, obj->transforms.rotation[2], obj->cachedModelMatrix);
-    glm_scale(obj->cachedModelMatrix, obj->transforms.scale);
+    GlhTransformsToMat4(&obj->transforms, &obj->cachedModelMatrix);
 }
 //internal, used to avoid repeating code
 void initArrayBuffer(GLuint *buffer, int components, Vector *vec, char* name) {
@@ -354,6 +363,129 @@ void GlhGenerateMeshBuffers(struct GlhMesh *mesh) {
 // i still recomend calling it when and objects is not needed for later (multiple
 // textures stored in vectors maybe)
 void GlhFreeObject(struct GlhObject *obj) {}
+
+void GlhInitFreeType() {
+    if(FT_Init_FreeType(&ft)) {
+        printf("ERROR, couldon't init freetype\n");
+    }
+}
+
+void GlhFreeFreeType() {
+    FT_Done_FreeType(ft);
+}
+
+void GlhInitFont(struct GlhFont *font, char* ttfFileName, int size, int glyphCount) {
+    map_init(&font->glyphsData, sizeof(struct GlhFontGLyphData));
+    FT_Face face;
+    if(FT_New_Face(ft, ttfFileName, 0, &face)) {
+        printf("ERROR, when loading font face %s\n", ttfFileName);
+        return;
+    }
+    FT_Set_Char_Size(face, 0, size << 6, 96, 96);
+    int max_dim = (1 + (face->size->metrics.height >> 6)) * ceilf(sqrtf(glyphCount));
+	int tex_width = 1;
+	while(tex_width < max_dim) tex_width <<= 1;
+	int tex_height = tex_width;
+    char* pixels = (char*)calloc(tex_width * tex_height, 1);
+    int pen_y = 0, pen_x = 0;
+
+    for(int i = 0; i < glyphCount; ++i){
+		FT_Load_Char(face, i, FT_LOAD_RENDER | FT_LOAD_FORCE_AUTOHINT | FT_LOAD_TARGET_LIGHT);
+		FT_Bitmap* bmp = &face->glyph->bitmap;
+
+		if(pen_x + bmp->width >= tex_width){
+			pen_x = 0;
+			pen_y += ((face->size->metrics.height >> 6) + 1);
+		}
+
+		for(int row = 0; row < bmp->rows; ++row){
+			for(int col = 0; col < bmp->width; ++col){
+				int x = pen_x + col;
+				int y = pen_y + row;
+				pixels[y * tex_width + x] = bmp->buffer[row * bmp->pitch + col];
+			}
+		}
+
+		// this is stuff you'd need when rendering individual glyphs out of the atlas
+        struct GlhFontGLyphData info;
+		info.x0 = pen_x;
+		info.y0 = pen_y;
+		info.x1 = pen_x + bmp->width;
+		info.y1 = pen_y + bmp->rows;
+
+		info.x_off   = face->glyph->bitmap_left;
+		info.y_off   = face->glyph->bitmap_top;
+		info.advance = face->glyph->advance.x >> 6;
+        char c = (char) i;
+
+        map_set(&font->glyphsData, &c, &info);
+
+		pen_x += bmp->width + 1;
+	}
+
+	FT_Done_FreeType(ft);
+
+	// write png
+
+	char* png_data = (char*)calloc(tex_width * tex_height * 4, 1);
+	for(int i = 0; i < (tex_width * tex_height); ++i){
+		png_data[i * 4 + 0] |= pixels[i];
+		png_data[i * 4 + 1] |= pixels[i];
+		png_data[i * 4 + 2] |= pixels[i];
+		png_data[i * 4 + 3] = 0xff;
+	}
+
+    glGenTextures(1, &font->texture);
+    glBindTexture(GL_TEXTURE_2D, font->texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    // put image data in texture
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tex_width, tex_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, png_data);
+    // generate mipmap to make sampling faster
+    glGenerateMipmap(GL_TEXTURE_2D);
+
+	free(png_data);
+	free(pixels);
+}
+
+void GlhTextObjectUpdateMesh(struct GlhTextObject *tob, char* OldString) {
+    if(OldString == NULL) {
+        glGenBuffers(1, &tob->vertBuffer);
+        glGenBuffers(1, &tob->uvsBuffer);
+
+
+    }
+}
+
+void GlhTextObjectSetText(struct GlhTextObject *tob, char* string) {
+    char* oldState = tob->_text;
+    tob->_text = string;
+    GlhTextObjectUpdateMesh(tob, oldState);
+}
+
+char* GlhTextObjectGetText(struct GlhTextObject *tob) {
+    return tob->_text;
+}
+
+// transforms can be NULL
+void GlhInitTextObject(struct GlhTextObject *tob, char* string, vec4 color, struct GlhTransforms *tsf) {
+    tob->type = text;
+    if(tsf != NULL) {
+        tob->transforms = *tsf;
+    } else {
+        glm_vec3_copy(GLM_VEC3_ZERO, tob->transforms.rotation);
+        glm_vec3_copy(GLM_VEC3_ZERO, tob->transforms.translation);
+        glm_vec3_copy(GLM_VEC3_ONE, tob->transforms.scale);
+    }
+    vector_init(&tob->verticies, 60, sizeof(float));
+    vector_init(&tob->uvs, 40, sizeof(float));
+
+    glm_vec4_copy(color, tob->color);
+    tob->_text = NULL;
+    GlhTextObjectSetText(tob, string);
+}
 
 int loadTexture(GLuint *texture, char* filename, bool alpha) {
     // create, bind texture and set parameters
