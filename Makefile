@@ -1,4 +1,4 @@
-CFLAGS=-Wall -g
+CFLAGS=-Wall -g #-fsanitize=address -fno-omit-frame-pointer
 LDFLAGS=-lglfw -lGL -lm -lGLEW -lX11 -lGLU -DGLEW_STATIC -lfreetype
 
 build: build/main.o build/vector.o build/glhelper.o build/maps.o build/events.o

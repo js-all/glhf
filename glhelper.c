@@ -1,3 +1,4 @@
+#include <freetype2/freetype/fttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -373,68 +374,193 @@ void GlhInitFreeType() {
 void GlhFreeFreeType() {
     FT_Done_FreeType(ft);
 }
+ 
+void GlhFreeFont(struct GlhFont *font) {
+    map_free(&font->glyphsData);
+    glDeleteTextures(1, &font->texture);
+}
 
-void GlhInitFont(struct GlhFont *font, char* ttfFileName, int size, int glyphCount) {
+void GlhInitFont(struct GlhFont *font, char* ttfFileName, int size, int glyphCount, float packingPrecision) {
+    // init the final map which will store all the existing glyph data, plus a single default char
     map_init(&font->glyphsData, sizeof(struct GlhFontGLyphData));
+    // load the font and set char size
     FT_Face face;
     if(FT_New_Face(ft, ttfFileName, 0, &face)) {
         printf("ERROR, when loading font face %s\n", ttfFileName);
         return;
     }
     FT_Set_Char_Size(face, 0, size << 6, 96, 96);
-    int max_dim = (1 + (face->size->metrics.height >> 6)) * ceilf(sqrtf(glyphCount));
-	int tex_width = 1;
-	while(tex_width < max_dim) tex_width <<= 1;
-	int tex_height = tex_width;
-    char* pixels = (char*)calloc(tex_width * tex_height, 1);
-    int pen_y = 0, pen_x = 0;
+    // quick, dirty and easy way to get total glyph count
+    int _glyphCount = glyphCount;
+    float _packingPrecision = packingPrecision <= 0 ? 0.75 : packingPrecision;
+    _packingPrecision = _packingPrecision >= 1 ? 0.999 : _packingPrecision;
+    if(glyphCount == -1) {
+        _glyphCount = 0;
+        FT_UInt ind;
+        FT_ULong c;
+        c = FT_Get_First_Char(face, &ind);
+        while (ind != 0) {
+            c = FT_Get_Next_Char(face, c, &ind);
+            _glyphCount++;
+        }
+    }
+    // struct that will store all extracted data about chars from the font
+    // to avoid re extracting them multiple time when packing (to get the width and height)
+    struct tmpGlyphData {
+        int w;
+        int h;
+        int xo;
+        int yo;
+        int ad;
+        int ar;
+        char c;
+        char* px;
+    } prePackingGlyphsData[_glyphCount + 1];
+    // char index in the font
+    FT_UInt ci = 0;
+    FT_ULong charcode;
+    // of all chars
+    int totalHeight = 0;
+    long totalArea = 0;
+    // -1 is gonna be the default char, then the other will be the chars from the font
+    for(int i = -1; i < _glyphCount; i++) {
+        FT_Int32 flags = FT_LOAD_RENDER | FT_LOAD_FORCE_AUTOHINT | FT_LOAD_TARGET_LIGHT;
+        if(i == -1) {
+            FT_Load_Char(face, -1, flags);
+        } else {
+            if(i == 0) {
+                // get first existing char (could not be char index of zero)
+                FT_Get_First_Char(face, &ci);
+            }
+            charcode = FT_Get_Next_Char(face, charcode, &ci);
+            FT_Load_Char(face, charcode, flags);
+        }
 
-    for(int i = 0; i < glyphCount; ++i){
-		FT_Load_Char(face, i, FT_LOAD_RENDER | FT_LOAD_FORCE_AUTOHINT | FT_LOAD_TARGET_LIGHT);
-		FT_Bitmap* bmp = &face->glyph->bitmap;
+        // extract and store data about the glyph
+        FT_Bitmap* bmp = &face->glyph->bitmap;
 
-		if(pen_x + bmp->width >= tex_width){
-			pen_x = 0;
-			pen_y += ((face->size->metrics.height >> 6) + 1);
-		}
+        prePackingGlyphsData[i+1].w = bmp->width;                           //width
+        prePackingGlyphsData[i+1].h = bmp->rows;                            // height
+        prePackingGlyphsData[i+1].xo = face->glyph->bitmap_left;            // x offset
+        prePackingGlyphsData[i+1].yo = face->glyph->bitmap_top;             // y offset
+        prePackingGlyphsData[i+1].ad = face->glyph->advance.x >> 6;         // the advance
+        prePackingGlyphsData[i+1].c = i < 0 ? '\0' : (char)ci;              // the character (null if default)
+        prePackingGlyphsData[i+1].px = calloc(bmp->width * bmp->rows, 1);   // allocate the size to store the bitmap
+        prePackingGlyphsData[i+1].ar = bmp->width * bmp->rows;              // the area
+        totalHeight += bmp->rows;
+        totalArea += prePackingGlyphsData[i+1].ar;
+        // store the bitmap into the px array
+        for(int y = 0; y < bmp->rows; y++) {
+            for(int x = 0; x < bmp->width; x++) {
+                prePackingGlyphsData[i+1].px[y * bmp->width + x] = bmp->buffer[y * bmp->pitch + x];
+            }
+        }
+    }
+    // shitty easy to implement buble sort: sort prePackingGlyphsData by area (from largest to smallest)
+    // to know if the array is sorted
+    int swapCount = 1;
+    while(swapCount != 0) {
+        swapCount = 0;
+        // the array has a length of glyphCount + 1, but because here we swap the current index and the next one
+        // we need to not hit the end, or the next one won't exist
+        for(int i = 0; i < _glyphCount; i++) {
+            if(prePackingGlyphsData[i].ar < prePackingGlyphsData[i + 1].ar) {
+                swapCount++;
+                // swap
+                struct tmpGlyphData tmp = prePackingGlyphsData[i];
+                prePackingGlyphsData[i] = prePackingGlyphsData[i + 1];
+                prePackingGlyphsData[i + 1] = tmp;
+            }
+        }
+    }
+    // here's the pretty bad algorithm i use to pack the glyphs:
+    // first set sideLength to totalHeight, as we are sure that it will fit (but probably leave huge unuse spaces)
+    // then, until we cannot pack the glyphs in a square with area of sideLength²:
+    //  -> try to pack the glyphs, while running store the packing data in a tmpPacks variable, then if the packing completes,
+    //     store that into packs
+    //  -> save sideLength in oldSideLength and reduce sideLength so that area is reduced by a percentage
+    //  -> try again, until the packing fails, then the last successfull (and therefor smallest (we could find)) packing is in packs
+    //     (and its sideLength is in OldSideLength)
+    int oldSideLength = 0;
+    int sideLength = totalHeight;
+    bool packingSuccessfull = true;
+    // vec2, we will only store the glyphs offset from the top left corner (origin), to know which glyph has been placed where
+    // boths arrays will be aligned (prePackingGlyphsData[i] gives the data of glyph i and packs[i] gives its offset)
+    int packs[(_glyphCount + 1) * 2];
+    while(packingSuccessfull) {
+        int tmpPacks[(_glyphCount + 1) * 2];
+        int packedGlyphsCount = 0;
+        // TODO: better the packing algorithm
+        int lastY = 0;
+        while(packedGlyphsCount < _glyphCount + 1) {
+            int lastX = 0;
+            while(packedGlyphsCount < _glyphCount + 1) {
+                // if theres not enough horizontal or vertical room to put the glyph
+                if(prePackingGlyphsData[packedGlyphsCount].w + lastX >= sideLength) break;
+                if(prePackingGlyphsData[packedGlyphsCount].h + lastY >= sideLength) {
+                    // to remember the reason we broke out of this while
+                    packingSuccessfull = false;
+                    break;
+                }
+                // store the offset
+                tmpPacks[packedGlyphsCount*2+0] = lastX;
+                tmpPacks[packedGlyphsCount*2+1] = lastY;
+                // set the new offset
+                lastX += prePackingGlyphsData[packedGlyphsCount].w;
+                packedGlyphsCount ++;
+            }
+            // if the packing failed break now to avoid infinit loop
+            if(!packingSuccessfull) break;
+            // get max y value of all the packed glyph
+            for(int i = 0; i < packedGlyphsCount; i++) {
+                int y = tmpPacks[i*2+1] + prePackingGlyphsData[i].h;
+                lastY = lastY < y ? y : lastY;
+            }
+        }
+        if(packingSuccessfull) {
+            for(int i = 0; i <= (_glyphCount*2); i++) {
+                packs[i] = tmpPacks[i];
+            }
+            // reduce area
+            oldSideLength = sideLength;
+            sideLength = sqrt(_packingPrecision * sideLength * sideLength);
+        }
+    } 
+    sideLength = oldSideLength;
+    // allocate memory to store the font's atlas' pixels
+    char* pixels = (char*)calloc(sideLength * sideLength, 1);
+    for(int i = 0; i <= _glyphCount; i++) {
+        // put the char info in the map
+        struct GlhFontGLyphData info = {};
+        info.x0 = packs[i*2+0];
+        info.y0 = packs[i*2+1];
+        info.x1 = info.x0 + prePackingGlyphsData[i].w;
+        info.y1 = info.y0 + prePackingGlyphsData[i].h;
+        info.advance = prePackingGlyphsData[i].ad;
+        info.x_off = prePackingGlyphsData[i].xo;
+        info.y_off = prePackingGlyphsData[i].yo;
+        char* key = prePackingGlyphsData[i].c == '\0' ? "default" : &prePackingGlyphsData[i].c;
+        map_set(&font->glyphsData, key, &info);
+        // set atlas' pixels to the char's pixels (correctly offseted)
+        for(int y = 0; y < prePackingGlyphsData[i].h; y++) {
+            int off = ((sideLength-1) - (y + info.y0)) * sideLength + info.x0;
+            for(int x = 0; x < prePackingGlyphsData[i].w; x++) {
+                pixels[off + x] = prePackingGlyphsData[i].px[y * prePackingGlyphsData[i].w + x];
+            }
+        }
+        free(prePackingGlyphsData[i].px);
+    }
 
-		for(int row = 0; row < bmp->rows; ++row){
-			for(int col = 0; col < bmp->width; ++col){
-				int x = pen_x + col;
-				int y = pen_y + row;
-				pixels[y * tex_width + x] = bmp->buffer[row * bmp->pitch + col];
-			}
-		}
-
-		// this is stuff you'd need when rendering individual glyphs out of the atlas
-        struct GlhFontGLyphData info;
-		info.x0 = pen_x;
-		info.y0 = pen_y;
-		info.x1 = pen_x + bmp->width;
-		info.y1 = pen_y + bmp->rows;
-
-		info.x_off   = face->glyph->bitmap_left;
-		info.y_off   = face->glyph->bitmap_top;
-		info.advance = face->glyph->advance.x >> 6;
-        char c = (char) i;
-
-        map_set(&font->glyphsData, &c, &info);
-
-		pen_x += bmp->width + 1;
-	}
-
+    FT_Done_Face(face);
 	FT_Done_FreeType(ft);
-
 	// write png
-
-	char* png_data = (char*)calloc(tex_width * tex_height * 4, 1);
-	for(int i = 0; i < (tex_width * tex_height); ++i){
+	char* png_data = calloc(sideLength * sideLength * 4, sizeof(char));
+	for(int i = 0; i < (sideLength * sideLength); i++){
 		png_data[i * 4 + 0] |= pixels[i];
 		png_data[i * 4 + 1] |= pixels[i];
 		png_data[i * 4 + 2] |= pixels[i];
 		png_data[i * 4 + 3] = 0xff;
 	}
-
     glGenTextures(1, &font->texture);
     glBindTexture(GL_TEXTURE_2D, font->texture);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
@@ -442,12 +568,13 @@ void GlhInitFont(struct GlhFont *font, char* ttfFileName, int size, int glyphCou
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     // put image data in texture
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tex_width, tex_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, png_data);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, sideLength, sideLength, 0, GL_RGBA, GL_UNSIGNED_BYTE, png_data);
     // generate mipmap to make sampling faster
     glGenerateMipmap(GL_TEXTURE_2D);
 
 	free(png_data);
 	free(pixels);
+    printf("ran !\n");
 }
 
 void GlhTextObjectUpdateMesh(struct GlhTextObject *tob, char* OldString) {

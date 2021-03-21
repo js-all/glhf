@@ -132,4 +132,9 @@ int loadTexture(GLuint *texture, char* filename, bool alpha);
 void GlhInitFreeType();
 // stops freetype should be called when every fonts has been initilized or at the end or execution
 void GlhFreeFreeType();
-void GlhInitFont(struct GlhFont *font, char* ttfFileName, int size, int glyphCount);
+// init a font, size is the resolution of the characters, glyphcount the number of them (can be -1 for all in the font,
+// will have multiple times the same characters if glyphcount is higher than the total number of glyphs in the font)
+// packingPrecision is how dense (and how long it takes to compute) will the packing be, from 0 to 1 (exclusive)
+// 1 will be defaulted to 0.99, 0 to 0.75, the higher the value, the denser it gets.
+void GlhInitFont(struct GlhFont *font, char* ttfFileName, int size, int glyphCount, float packingPrecision);
+void GlhFreeFont(struct GlhFont *font);

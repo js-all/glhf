@@ -51,7 +51,7 @@ int main() {
     loadTexture(&tex, "images/tuxs.png", true);
     loadTexture(&tex2, "images/texture.jpeg", false);
     struct GlhFont font;
-    GlhInitFont(&font, "fonts/Roboto-Regular.ttf", 64, 128);
+    GlhInitFont(&font, "fonts/Roboto-Regular.ttf", 128, -1, 0.95);
     ctx.camera.fov = glm_rad(45);
     struct GlhMesh mesh;
     // fill mesh
@@ -86,7 +86,7 @@ int main() {
 
     struct GlhObject obj;
     struct GlhObject ground;
-    GlhInitObject(&obj,font.texture, GLM_VEC3_ONE, GLM_VEC3_ZERO, GLM_VEC3_ZERO, &mesh, &prg);
+    GlhInitObject(&obj,tex, GLM_VEC3_ONE, GLM_VEC3_ZERO, GLM_VEC3_ZERO, &mesh, &prg);
     GlhInitObject(&ground, tex2, GLM_VEC3_ONE, GLM_VEC3_ZERO, GLM_VEC3_ZERO, &mesh, &prg);
 
     glm_vec3_scale(obj.transforms.scale, 0.3, obj.transforms.scale);
@@ -100,7 +100,8 @@ int main() {
     GlhUpdateObjectModelMatrix(&ground);
     GlhContextAppendChild(&ctx, &ground);
     GlhContextAppendChild(&ctx, &obj);
-    //ctx.camera.perspective = false;
+    ctx.camera.position[1] = 0.5;
+    ctx.camera.position[2] = 1;
     GlhComputeContextProjectionMatrix(&ctx);
     glClearColor(1.0, 1.0, 1.0, 1.0);
     double time;
@@ -112,6 +113,7 @@ int main() {
         obj.transforms.translation[0] = sin(time) / 4;
         obj.transforms.translation[2] = cos(time) / 4 -1.5;
         obj.transforms.translation[1] = fabs(cos(time* 4)) / 16;
+        ctx.camera.rotation[0] = (sin(time) + 1) / 4 - 0.5;
         GlhComputeContextViewMatrix(&ctx);
         GlhUpdateObjectModelMatrix(&obj);
         GlhRenderContext(&ctx);
@@ -124,7 +126,9 @@ int main() {
     GlhFreeObject(&ground);
     GlhFreeProgram(&prg);
     GlhFreeContext(&ctx);
-    GlhFreeFreeType();
+    GlhFreeFont(&font);
+    //? causes a seg fault 
+    //GlhFreeFreeType();
     glfwTerminate();
 
     return 0;
