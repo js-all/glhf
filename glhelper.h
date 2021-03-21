@@ -57,6 +57,7 @@ struct GlhObject {
 
 struct GlhFont {
     GLuint texture;
+    int textureSideLength;
     Map glyphsData;
 };
 
@@ -65,22 +66,24 @@ struct GlhFontGLyphData {
     int y0;
     int x1;
     int y1;
-    int x_off;
-    int y_off;
-    int advance;
+    float wgl;
+    float hgl;
+    float x_off;
+    float y_off;
+    float advance;
 };
 
 struct GlhTextObject {
     enum GlhObjectTypes type;
     struct GlhFont *font;
-    char* _text;
-    vec4 color;
+    struct GlhProgram *program;
     struct GlhTransforms transforms;
+    struct GlhMeshBufferData bufferData;
+    char* _text;
+    mat4 cachedModelMatrix;
+    vec4 color;
     Vector verticies;
-    Vector uvs;
-    GLuint VAO;
-    GLuint vertBuffer;
-    GLuint uvsBuffer;
+    Vector texCoords;
 };
 
 //! as of now, applications should only have a single context, and would probably break otherwise
@@ -100,7 +103,7 @@ struct GlhProgram {
     // a function pointer for a function setting the uniforms to their correct values.
     // it is not directly implemented in the helper as no shaders are provided by default
     // and as such should be dealt with by the user
-    void (*setGlobalUniforms)(struct GlhObject*, struct GlhContext*);
+    void (*setGlobalUniforms)(void*, struct GlhContext*);
 };
 
 void GlhInitProgram(struct GlhProgram *prg, char* fragSourceFilename, char* vertSourceFilename, char* uniforms[], int uniformsCount, void (*setUniforms)());
@@ -108,8 +111,8 @@ void GlhFreeProgram(struct GlhProgram *prg);
 // initialize context, windowWidth and windowHeight can be 0, windowTitle can be NULL
 void GlhInitContext(struct GlhContext *ctx, int windowWidth, int windowHeight, char* windowTitle);
 void GlhFreeContext(struct GlhContext *ctx);
-// add GlhObject child to context.
-void GlhContextAppendChild(struct GlhContext *ctx, struct GlhObject *child);
+// add GlhObject child to context. (child can be TextObject or Object)
+void GlhContextAppendChild(struct GlhContext *ctx, void *child);
 // compute camera's view matrix, you most likely want to update it every frame
 void GlhComputeContextViewMatrix(struct GlhContext *ctx);
 // compute camera's projection matrix, does not need to be recomputed regularly unless specifics changes a made to the camera (fov, not transforms)
@@ -138,3 +141,11 @@ void GlhFreeFreeType();
 // 1 will be defaulted to 0.99, 0 to 0.75, the higher the value, the denser it gets.
 void GlhInitFont(struct GlhFont *font, char* ttfFileName, int size, int glyphCount, float packingPrecision);
 void GlhFreeFont(struct GlhFont *font);
+void GlhTextObjectUpdateMesh(struct GlhTextObject *tob, char* OldString);
+void GlhUpdateTextObjectModelMatrix(struct GlhTextObject *tob);
+void GlhTextObjectSetText(struct GlhTextObject *tob, char* string);
+char* GlhTextObjectGetText(struct GlhTextObject *tob);
+// transforms can be NULL
+void GlhInitTextObject(struct GlhTextObject *tob, char* string, struct GlhFont *font, struct GlhProgram *prg, vec4 color, struct GlhTransforms *tsf);
+void GlhRenderTextObject(struct GlhTextObject *tob, struct GlhContext *ctx);
+void GlhFreeTextObject(struct GlhTextObject *tob);

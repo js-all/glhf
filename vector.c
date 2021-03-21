@@ -65,7 +65,10 @@ void vector_shift(struct Vector *vec, void* data) {
 }
 
 void vector_splice(struct Vector *vec, int start, int length) {
-    memmove(vec->data + start * vec->data_size, vec->data + (start + length) * vec->data_size, ((vec->size -= length) - start) * vec->data_size);
+    int _length = length >= 0 ? length : vec->size - start;
+    if(_length <= 0) return;
+    printf("%i %i %i\n", _length, vec->size, start);
+    memmove(vec->data + start * vec->data_size, vec->data + (start + _length) * vec->data_size, ((vec->size -= _length) - start) * vec->data_size);
 }
 
 void vector_print_as_int(struct Vector *vec) {
