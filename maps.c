@@ -17,6 +17,10 @@ int getKeyIndex(Map *map, char* key) {
     return -1;
 }
 
+bool map_has(Map *map, char* key) {
+    return getKeyIndex(map, key) != -1;
+}
+
 void map_set(Map *map, char* key, void* value) {
     int i = getKeyIndex(map, key);
     if(i != -1) {
