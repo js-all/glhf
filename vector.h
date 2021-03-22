@@ -5,10 +5,6 @@
 #define _VECTOR_H
 // used to get elements from vector needs a define because vectors don't have types
 #define vector_get(vectordata, index, type) (((type*)vectordata)[index])
-#define vector_push_array(vector, array, size) \
-for(int _i = 0; _i < size; _i++) { \
-    vector_push(&vector, &array[_i]); \
-}
 #define vector_to_array(vector, array, type) \
 for(int _i = 0; _i < vector.size; _i++) { \
     array[_i] = vector_get(vector.data, _i, type); \
@@ -30,6 +26,7 @@ typedef struct Vector Vector;
 void vector_init(struct Vector *vec, int initSize, size_t dataSize);
 void vector_set(struct Vector *vec, void* data, unsigned int index);
 void vector_push(struct Vector *vec, void* data);
+void vector_push_array(struct Vector *vec, void* array, int arrayLength);
 void vector_insert_before(struct Vector *vec, void* data, int index);
 void vector_insert(struct Vector *vec, void* data);
 void vector_pop(struct Vector *vec, void* data);

@@ -55,6 +55,20 @@ struct GlhObject {
     GLuint texture;
 };
 
+struct GlhTextObject {
+    enum GlhObjectTypes type;
+    struct GlhFont *font;
+    struct GlhProgram *program;
+    struct GlhTransforms transforms;
+    struct GlhMeshBufferData bufferData;
+    char* _text;
+    size_t _textAllocated;
+    mat4 cachedModelMatrix;
+    vec4 color;
+    Vector verticies;
+    Vector texCoords;
+};
+
 struct GlhFont {
     GLuint texture;
     int textureSideLength;
@@ -71,19 +85,6 @@ struct GlhFontGLyphData {
     float x_off;
     float y_off;
     float advance;
-};
-
-struct GlhTextObject {
-    enum GlhObjectTypes type;
-    struct GlhFont *font;
-    struct GlhProgram *program;
-    struct GlhTransforms transforms;
-    struct GlhMeshBufferData bufferData;
-    char* _text;
-    mat4 cachedModelMatrix;
-    vec4 color;
-    Vector verticies;
-    Vector texCoords;
 };
 
 //! as of now, applications should only have a single context, and would probably break otherwise

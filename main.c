@@ -4,6 +4,7 @@
 #include <math.h>
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
+#include <string.h>
 #ifndef glClear
 #include <GL/gl.h>
 #endif
@@ -61,7 +62,7 @@ int main() {
     loadTexture(&tex2, "images/texture.jpeg", false);
 
     struct GlhFont font;
-    GlhInitFont(&font, "fonts/CormorantUnicase-Regular.ttf", 128, 128, 0.95);
+    GlhInitFont(&font, "fonts/CormorantUnicase-Regular.ttf", 128, -1, 0.95);
 
     struct GlhFontGLyphData gd;
     map_get(&font.glyphsData, "a", &gd);
@@ -112,7 +113,7 @@ int main() {
     GlhInitObject(&ground, tex2, GLM_VEC3_ONE, GLM_VEC3_ZERO, GLM_VEC3_ZERO, &mesh, &prg);
 
     struct GlhTextObject tob;
-    GlhInitTextObject(&tob, "TEXT!Bitches", &font, &txtPrg, color, NULL);
+    GlhInitTextObject(&tob, "TEXT!aaaa", &font, &txtPrg, color, NULL);
 
     glm_vec3_scale(obj.transforms.scale, 0.3, obj.transforms.scale);
     obj.transforms.translation[2] = -2;
@@ -135,8 +136,10 @@ int main() {
     GlhComputeContextProjectionMatrix(&ctx);
     glClearColor(0.1, 0.1, 0.1, 1.0);
     double time;
+    int it = 0;
+    unsigned int seed = 1541;
     while(!(glfwWindowShouldClose(ctx.window))) {
-        time = glfwGetTime() * 1.5 - 8;
+        time = glfwGetTime() * 1.5 - 3;
         // obj.transforms.rotation[1] = sin(time*1.5) * 0.1;
         // obj.transforms.rotation[2] = cos(time*1.5) * 0.05;
         // obj.transforms.scale[0] = ( sin(time*2+1) + 1) / 2 / 12 + 0.3;
@@ -144,11 +147,30 @@ int main() {
         // obj.transforms.translation[2] = cos(time) / 4 -1.5;
         // obj.transforms.translation[1] = fabs(cos(time* 4)) / 16;
         // ctx.camera.rotation[0] = (sin(time) + 1) / 4 - 0.5;
-        GlhComputeContextViewMatrix(&ctx);
         // GlhUpdateObjectModelMatrix(&obj);
         tob.transforms.translation[0] = pow(time * .5, 2) * time * .5 - 0.7;
         tob.transforms.rotation[0] = (tob.transforms.translation[0] + 0.7) * 10;
+        if(it-- <= 0) {
+            char old[10];
+            strcpy(old, tob._text);
+            srand(seed); seed = rand();
+            int c1 = seed % 50 + 50;
+            srand(seed); seed = rand();
+            int c2 = seed % 50 + 50;
+            srand(seed); seed = rand();
+            int c3 = seed % 50 + 50;
+            srand(seed); seed = rand();
+            int c4 = seed % 50 + 50;
+            char text[10] = "TEXT!aaaa\0";
+            text[5 + 0] = (char) c1;
+            text[5 + 1] = (char) c2;
+            text[5 + 2] = (char) c3;
+            text[5 + 3] = (char) c4;
+            GlhTextObjectSetText(&tob, text);
+            it = 5;
+        }
         GlhUpdateTextObjectModelMatrix(&tob);
+        GlhComputeContextViewMatrix(&ctx);
         GlhRenderContext(&ctx);
         glfwSwapBuffers(ctx.window);
         glfwPollEvents();

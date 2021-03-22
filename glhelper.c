@@ -15,6 +15,8 @@ static const char* attributes[] = {
     "vTexCoord"
 };
 
+static char fontGlyphDataMapDefaultKey[9] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, '\0'};
+
 FT_Library ft;
 
 void memset_pattern(void* dest, size_t dest_size, void* pattern, size_t pattern_size) {
@@ -58,7 +60,6 @@ int readFile(char* filename, int* size,char **content) {
     (*content)[f_size] = '\0';
 	*size = f_size;
     // debug info
-    printf("read file %s, content:\n\033[36m%s\033[0m\n", filename, *content);
 	return 0;
 }
 
@@ -143,11 +144,11 @@ void GlhInitProgram(struct GlhProgram *prg, char* fragSourceFilename, char* vert
     vector_init(&prg->uniformsLocation, uniformsCount, sizeof(GLint));
     vector_init(&prg->attributes, attributesCount, sizeof(char*));
     // push the fixed size arrays' values into the vectors
-    vector_push_array(prg->uniforms, uniforms, uniformsCount);
+    vector_push_array(&prg->uniforms, uniforms, uniformsCount);
     //* NOTE: the attribute vector is not really needed, as it will always be the 
     //* same as the attributes global array but i choosed to keep it that way if
     //* i ever come arround to implement custom attributes for whatever reasons
-    vector_push_array(prg->attributes, attributes, attributesCount);
+    vector_push_array(&prg->attributes, attributes, attributesCount);
     // get the uniforms' location
     for(int i = 0; i < uniformsCount; i++) {
         GLint v = glGetUniformLocation(prg->shaderProgram, vector_get(prg->uniforms.data, i, char*));
@@ -318,10 +319,10 @@ void GlhInitMesh(struct GlhMesh *mesh, vec3 verticies[], int verticiesCount, vec
     vector_init(&mesh->normals, verticiesCount, sizeof(vec3));
     vector_init(&mesh->indexes, indicesCount, sizeof(vec3));
     vector_init(&mesh->texCoords, texcoordsCount, sizeof(vec2));
-    vector_push_array(mesh->verticies, verticies, verticiesCount);
-    vector_push_array(mesh->normals, normals, verticiesCount);
-    vector_push_array(mesh->indexes, indices, indicesCount);
-    vector_push_array(mesh->texCoords, texcoords, texcoordsCount);
+    vector_push_array(&mesh->verticies, verticies, verticiesCount);
+    vector_push_array(&mesh->normals, normals, verticiesCount);
+    vector_push_array(&mesh->indexes, indices, indicesCount);
+    vector_push_array(&mesh->texCoords, texcoords, texcoordsCount);
     // create and bind VAO
     glGenVertexArrays(1, &mesh->bufferData.VAO);
     glBindVertexArray(mesh->bufferData.VAO);
@@ -452,51 +453,49 @@ void GlhInitFont(struct GlhFont *font, char* ttfFileName, int size, int glyphCou
     // struct that will store all extracted data about chars from the font
     // to avoid re extracting them multiple time when packing (to get the width and height)
     struct tmpGlyphData {
-        int w;
-        int h;
-        int xo;
-        int yo;
-        int ad;
-        int ar;
-        char c;
-        char* px;
-    } prePackingGlyphsData[_glyphCount + 1];
+        int w;               // width
+        int h;               // height
+        int xo;              // x offset (for rendering)
+        int yo;              // y offset
+        int ad;              // advance (char width with extra steps)
+        int ar;              // area
+        unsigned long c;     // the char code (unsigned long because thats whats freetype gives us)
+        char* px;            // pixels array storing the bitmap texture
+    } prePackingGlyphsData[_glyphCount + 1]; // glyphcount +1, to store every glyph, plus the "no glyph" glyph
+
     // char index in the font
     FT_UInt ci = 0;
     FT_ULong charcode;
     // of all chars
     int totalHeight = 0;
-    long totalArea = 0;
-    // -1 is gonna be the default char, then the other will be the chars from the font
+    // -1 is gonna be the no glyph" glyph, then the other will be the chars from the font
     for(int i = -1; i < _glyphCount; i++) {
         FT_Int32 flags = FT_LOAD_RENDER | FT_LOAD_FORCE_AUTOHINT | FT_LOAD_TARGET_LIGHT;
         if(i == -1) {
+            // -1 should always return no glyph (and therefor a fallback glyph that we want to store)
+            // here -1 stand for give me the glyph with char code 18446744073709551615 (casted to unsigned long)
             FT_Load_Char(face, -1, flags);
         } else {
+            // we first need the get the char index of the first existing char
             if(i == 0) {
-                // get first existing char (could not be char index of zero)
                 FT_Get_First_Char(face, &ci);
             }
+            // then we load the glyph !
             charcode = FT_Get_Next_Char(face, charcode, &ci);
             FT_Load_Char(face, charcode, flags);
         }
 
         // extract and store data about the glyph
         FT_Bitmap* bmp = &face->glyph->bitmap;
-        long h = face->glyph->metrics.height;
-        long w = face->glyph->metrics.width;
-        h = h == 0 ? 1 : h;
-        w = w == 0 ? 1 : w;
         prePackingGlyphsData[i+1].w = bmp->width;                           //width
         prePackingGlyphsData[i+1].h = bmp->rows;                            // height
         prePackingGlyphsData[i+1].xo = face->glyph->bitmap_left;            // x offset
         prePackingGlyphsData[i+1].yo = face->glyph->bitmap_top;             // y offset
         prePackingGlyphsData[i+1].ad = face->glyph->advance.x >> 6;         // the advance
-        prePackingGlyphsData[i+1].c = i < 0 ? '\0' : charcode;              // the character (null if default)
+        prePackingGlyphsData[i+1].c = i < 0 ? (unsigned long) -1 : charcode;// the character (max value if default)
         prePackingGlyphsData[i+1].px = calloc(bmp->width * bmp->rows, 1);   // allocate the size to store the bitmap
         prePackingGlyphsData[i+1].ar = bmp->width * bmp->rows;              // the area
         totalHeight += bmp->rows;
-        totalArea += prePackingGlyphsData[i+1].ar;
         // store the bitmap into the px array
         for(int y = 0; y < bmp->rows; y++) {
             for(int x = 0; x < bmp->width; x++) {
@@ -522,7 +521,7 @@ void GlhInitFont(struct GlhFont *font, char* ttfFileName, int size, int glyphCou
         }
     }
     // here's the pretty bad algorithm i use to pack the glyphs:
-    // first set sideLength to totalHeight, as we are sure that it will fit (but probably leave huge unuse spaces)
+    // first set sideLength to totalHeight, as we are sure that it will fit (but probably leave a huge unused space)
     // then, until we cannot pack the glyphs in a square with area of sideLength²:
     //  -> try to pack the glyphs, while running store the packing data in a tmpPacks variable, then if the packing completes,
     //     store that into packs
@@ -532,15 +531,17 @@ void GlhInitFont(struct GlhFont *font, char* ttfFileName, int size, int glyphCou
     int oldSideLength = 0;
     int sideLength = totalHeight;
     bool packingSuccessfull = true;
-    // vec2, we will only store the glyphs offset from the top left corner (origin), to know which glyph has been placed where
-    // boths arrays will be aligned (prePackingGlyphsData[i] gives the data of glyph i and packs[i] gives its offset)
+    // will simply store the x and y offset of every glyph (with even indexes being the xs and odd indexes being the ys)
     int packs[(_glyphCount + 1) * 2];
     while(packingSuccessfull) {
+        // same as packs
         int tmpPacks[(_glyphCount + 1) * 2];
         int packedGlyphsCount = 0;
         // TODO: better the packing algorithm
+        // to know where to place the new glyph
         int lastY = 0;
         while(packedGlyphsCount < _glyphCount + 1) {
+            // like wise
             int lastX = 0;
             while(packedGlyphsCount < _glyphCount + 1) {
                 // if theres not enough horizontal or vertical room to put the glyph
@@ -559,7 +560,7 @@ void GlhInitFont(struct GlhFont *font, char* ttfFileName, int size, int glyphCou
             }
             // if the packing failed break now to avoid infinit loop
             if(!packingSuccessfull) break;
-            // get max y value of all the packed glyph
+            // get max y value of all the packed glyph and set lastY to it
             for(int i = 0; i < packedGlyphsCount; i++) {
                 int y = tmpPacks[i*2+1] + prePackingGlyphsData[i].h;
                 lastY = lastY < y ? y : lastY;
@@ -571,9 +572,13 @@ void GlhInitFont(struct GlhFont *font, char* ttfFileName, int size, int glyphCou
             }
             // reduce area
             oldSideLength = sideLength;
+            // packing precision is the factor by which we multiply the area
             sideLength = sqrt(_packingPrecision * sideLength * sideLength);
         }
     } 
+    // because the reason we broke out of the above while, is that the last packing failed
+    // therefor the value stored in the current sideLength is wrong (too small), while
+    // the one in oldSideLength is guarented to be the last working one
     sideLength = oldSideLength;
     font->textureSideLength = sideLength;
     // allocate memory to store the font's atlas' pixels
@@ -583,44 +588,45 @@ void GlhInitFont(struct GlhFont *font, char* ttfFileName, int size, int glyphCou
         struct GlhFontGLyphData info = {};
         float invSize = 1.0 / size;
         info.x0 = packs[i*2+0];
-        info.y0 = sideLength - 1 - packs[i*2+1] - prePackingGlyphsData[i].h;
-        info.y1 = sideLength - 1 - packs[i*2+1];
+        info.y0 = sideLength - 1 - packs[i*2+1] - prePackingGlyphsData[i].h; // all those sidelength - 1 - something is to convert
+        info.y1 = sideLength - 1 - packs[i*2+1];            // the glyph's bitmap bottom left origin to the opengl top left origin
         info.x1 = info.x0 + prePackingGlyphsData[i].w;
-        info.hgl = (float) prePackingGlyphsData[i].h * invSize;
-        info.wgl = (float) prePackingGlyphsData[i].w * invSize;
+        info.hgl = (float) prePackingGlyphsData[i].h * invSize; // all the * invSize is to have a good value to work in opengl
+        info.wgl = (float) prePackingGlyphsData[i].w * invSize; // because the current ones are way too big and would require insane scaling
         info.advance = (float) prePackingGlyphsData[i].ad * invSize;
         info.x_off = (float) prePackingGlyphsData[i].xo * invSize;
         info.y_off = (float) prePackingGlyphsData[i].yo * invSize;
-        char* key = malloc(prePackingGlyphsData[i].c == '\0' ? 8 * sizeof(char) : 2 * sizeof(char));
-        if(prePackingGlyphsData[i].c == '\0') {
-            key[0] = 'd'; key[1] = 'e'; key[2] = 'f';
-            key[3] = 'a'; key[4] = 'u'; key[5] = 'l';
-            key[6] = 't'; key[7] = '\0';
-        } else {
-            key[0] = prePackingGlyphsData[i].c;
-            key[1] = '\0';
-        }
+
+        // here the malloc is mendatory because only the pointer to the chars is stored in the vectors
+        // but that doesn't prevent from dangeling pointers.
+        // TODO: make a custom String Vector optimized to store strings and prevent dangeling pointers
+        // allocate enough memory to store the ULong char code into a char*
+        // + sizeof(char) for the null termination
+        char* key = malloc(sizeof(unsigned long) + sizeof(char));
+        *(unsigned long*)key = prePackingGlyphsData[i].c; // put the char code in the char*
+        *(sizeof(unsigned long) + key) = '\0'; // null terminate 
+
+        // store all the generated glyph infos in the font map
         map_set(&font->glyphsData, key, &info);
+
         // set atlas' pixels to the char's pixels (correctly offseted)
         for(int y = 0; y < prePackingGlyphsData[i].h; y++) {
             for(int x = 0; x < prePackingGlyphsData[i].w; x++) {
+                // tbh even i don't really understand how all this cluster fuck of different images representation works
+                // but it does
                 pixels[(info.y0 + (prePackingGlyphsData[i].h-1) - y) * sideLength + info.x0 + x] = prePackingGlyphsData[i].px[y * prePackingGlyphsData[i].w + x];
             }
         }
+
+        // free the previously allocated per glyph pixel buffer
         free(prePackingGlyphsData[i].px);
     }
 
     FT_Done_Face(face);
 	FT_Done_FreeType(ft);
-	// write png
-	char* png_data = calloc(sideLength * sideLength * 4, sizeof(char));
-	for(int i = 0; i < (sideLength * sideLength); i++){
-		png_data[i * 4 + 0] |= pixels[i];
-		png_data[i * 4 + 1] |= pixels[i];
-		png_data[i * 4 + 2] |= pixels[i];
-		png_data[i * 4 + 3] = 0xff;
-	}
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
+    // create opengl texture
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1); // to be able to use single channel textures
     glGenTextures(1, &font->texture);
     glBindTexture(GL_TEXTURE_2D, font->texture);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
@@ -632,22 +638,36 @@ void GlhInitFont(struct GlhFont *font, char* ttfFileName, int size, int glyphCou
     // generate mipmap to make sampling faster
     glGenerateMipmap(GL_TEXTURE_2D);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
-	free(png_data);
+
+    // finaly, free out pixels buffer
 	free(pixels);
+}
+
+void _characterToGlyphData(char c, struct GlhFont *font, struct GlhFontGLyphData *cdata) {
+    // converting the char to a correctly formated font char info map key
+    // looks complicated but really just is:
+    // make char array, store the un altered unsigned long char code data inside
+    // and null terminate
+    char k[9]; // 9 -> 8 bytes for the unsigned long, + 1 for the nul termination
+    *(unsigned long*)k = (unsigned long) c; // cast the char* to an unsined long pointer, to just set it like that
+    k[8] = '\0'; // null terminate
+    // get the glyph data if it exist, fallback to default if it doesn't
+    if(map_has(&font->glyphsData, k)) {
+        map_get(&font->glyphsData, k, cdata);
+    } else {
+        map_get(&font->glyphsData, fontGlyphDataMapDefaultKey, cdata);
+    }
 }
 
 void _characterToMesh(char c, struct GlhFont *font, float *xoff, float yoff, float *newVerticies, float *newTexCoords, int arrOffset) {
     struct GlhFontGLyphData cdata;
-    char k[2] = {c, '\0'};
-    if(map_has(&font->glyphsData, k)) {
-        map_get(&font->glyphsData, k, &cdata);
-    } else {
-        map_get(&font->glyphsData, "default", &cdata);
-    }
+    _characterToGlyphData(c, font, &cdata);
+    // to convert from 0 -> textureSideLength texCoords to 0 -> 1
     float invsl = 1.0 / font->textureSideLength;
     float xoffset = *xoff + cdata.x_off;
     float yoffset = yoff + cdata.y_off - cdata.hgl;
     int ao = arrOffset * 3 * 4;
+    // simple but not horrible way to set the new verticies
     newVerticies[ao + 0] =       xoffset;       newVerticies[ao +  1] =       yoffset;       newVerticies[ao +  2] = 0;
     newVerticies[ao + 3] = xoffset + cdata.wgl; newVerticies[ao +  4] =       yoffset;       newVerticies[ao +  5] = 0;
     newVerticies[ao + 6] =       xoffset;       newVerticies[ao +  7] = yoffset + cdata.hgl; newVerticies[ao +  8] = 0;
@@ -661,75 +681,78 @@ void _characterToMesh(char c, struct GlhFont *font, float *xoff, float yoff, flo
 }
 
 void GlhTextObjectUpdateMesh(struct GlhTextObject *tob, char* OldString) {
+    // until which char can we just keep everything the same
     int charOff = 0;
     int oldLength = OldString == NULL ? 0 : strlen(OldString);
     int newLength = strlen(tob->_text);
     int minLength = (int) glm_min((float) oldLength, (float) newLength);
     int changedLength = 0;
-    if(OldString == NULL) {
-        glGenVertexArrays(1, &tob->bufferData.VAO);
-        glGenBuffers(1, &tob->bufferData.vertexBuffer);
-        glGenBuffers(1, &tob->bufferData.tcoordBuffer);
-        glGenBuffers(1, &tob->bufferData.normalBuffer);
-        glGenBuffers(1, &tob->bufferData.indexsBuffer);
-    } else {
+    if(OldString != NULL) {
         for(int i = 0; i < minLength; i++) {
             if (OldString[i] == tob->_text[i]) charOff++;
             else break;
         }
     }
     changedLength = newLength - charOff;
+    // remove the changed glyphs' verticies and texcoords
     vector_splice(&tob->verticies, charOff * 3 * 4, -1);
     vector_splice(&tob->texCoords, charOff * 2 * 4, -1);
+    // recompute the new ones
     float newVerticies[changedLength * 3 * 4];
     float newTexCoords[changedLength * 2 * 4];
+    // the offset where to put the quad
     float xoff = 0;
+    // if we reuse data
+    if (tob->verticies.size > 0 && charOff > 0) {
+        // get the advance of the last reused glyph
+        struct GlhFontGLyphData cd;
+        _characterToGlyphData(tob->_text[charOff-1], tob->font, &cd);
+        // and add it to its x pos into the xoffset
+        xoff = vector_get(tob->verticies.data, tob->verticies.size - 6, float) + cd.advance;
+    }
     for(int i = 0; i < changedLength; i++) {
         _characterToMesh(tob->_text[charOff + i], tob->font, &xoff, 0, newVerticies, newTexCoords, i);
     }
-    // set the patterns and declare the arrays
+    // appends changes to verticies and texcoords vector
+    vector_push_array(&tob->verticies, newVerticies, changedLength * 3 * 4);
+    vector_push_array(&tob->texCoords, newTexCoords, changedLength * 2 * 4);
+    // define normalsPattern, to repeat it in the normals arr (because every verticies will have the same normals)
     float normalsPattern[3] = {0.0, 0.0, -1.0};
     float normalsArr[newLength * 3 * 4];
-    int indiciesArr[newLength * 6];
     memset_pattern(normalsArr, sizeof(normalsArr), normalsPattern, sizeof(normalsPattern));
-    int vi = 0;
+    // compute indices, will allways follow 0, 1, 2, 1, 3, 2 (then 4, 5, 6, 5, 7, 6)
+    int indiciesArr[newLength * 6]; // six for two triangles
+    int vi = 0; // vertex index
     for(int i = 0; i < newLength * 6; i+=6) {
         indiciesArr[i + 0] = vi + 0; indiciesArr[i + 1] = vi + 1; indiciesArr[i + 2] = vi + 2;
         indiciesArr[i + 3] = vi + 1; indiciesArr[i + 4] = vi + 3; indiciesArr[i + 5] = vi + 2;
         vi += 4;
     }
+    // put that data in buffers
+    // TODO work in there to cache those buffers and use glBufferSub data if possible for better performances
+    // bind VAO now as binding a GL_ELEMENT_ARRAY buffer while the VAO is bound will link it to the VAO
     glBindVertexArray(tob->bufferData.VAO);
     glBindBuffer(GL_ARRAY_BUFFER, tob->bufferData.normalBuffer);
     glBufferData(GL_ARRAY_BUFFER, sizeof(normalsArr), normalsArr, GL_DYNAMIC_DRAW);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, tob->bufferData.indexsBuffer);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indiciesArr), indiciesArr, GL_DYNAMIC_DRAW);
-
+    // put data in buffers, using glBufferSubData if possible (= if no realloc needed)
     if(oldLength != newLength) {
-        float verticiesArr[newLength * 3 * 4];
-        float texCoordsArr[newLength * 2 * 4];
-        size_t originalVerticiesSize = sizeof(float) * tob->verticies.size;
-        size_t originalTexCoordsSize = sizeof(float) * tob->texCoords.size;
-        memcpy(verticiesArr, tob->verticies.data, originalVerticiesSize);
-        memcpy(texCoordsArr, tob->texCoords.data, originalTexCoordsSize);
-        memcpy(verticiesArr + originalVerticiesSize, newVerticies, sizeof(newVerticies));
-        memcpy(texCoordsArr + originalTexCoordsSize, newTexCoords, sizeof(newTexCoords));
-
         glBindBuffer(GL_ARRAY_BUFFER, tob->bufferData.vertexBuffer);
-        glBufferData(GL_ARRAY_BUFFER, sizeof(verticiesArr), verticiesArr, GL_DYNAMIC_DRAW);
+        glBufferData(GL_ARRAY_BUFFER, tob->verticies.size * tob->verticies.data_size, tob->verticies.data, GL_DYNAMIC_DRAW);
         glBindBuffer(GL_ARRAY_BUFFER, tob->bufferData.tcoordBuffer);
-        glBufferData(GL_ARRAY_BUFFER, sizeof(texCoordsArr), texCoordsArr, GL_DYNAMIC_DRAW);
+        glBufferData(GL_ARRAY_BUFFER, tob->texCoords.size * tob->texCoords.data_size, tob->texCoords.data, GL_DYNAMIC_DRAW);
     } else {
         glBindBuffer(GL_ARRAY_BUFFER, tob->bufferData.vertexBuffer);
-        glBufferSubData(GL_ARRAY_BUFFER, sizeof(float) * tob->verticies.size, sizeof(newVerticies), newVerticies);
+        glBufferSubData(GL_ARRAY_BUFFER, sizeof(float) * charOff * 3 * 4, sizeof(newVerticies), newVerticies);
         glBindBuffer(GL_ARRAY_BUFFER, tob->bufferData.tcoordBuffer);
-        glBufferSubData(GL_ARRAY_BUFFER, sizeof(float) * tob->texCoords.size, sizeof(newTexCoords), newTexCoords);
+        glBufferSubData(GL_ARRAY_BUFFER, sizeof(float) * charOff * 2 * 4, sizeof(newTexCoords), newTexCoords);
     }
-
+    // bind attributes to VAO
     setAttribute(tob->bufferData.vertexBuffer, 0, 3);
     setAttribute(tob->bufferData.normalBuffer, 1, 3);
     setAttribute(tob->bufferData.tcoordBuffer, 2, 2);
-
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, tob->bufferData.indexsBuffer);
+    // "vertex" here as the number drawn, not the actual one (time 6 for two triangles per quad)
     tob->bufferData.vertexCount = newLength * 6;
 }
 
@@ -738,8 +761,13 @@ void GlhUpdateTextObjectModelMatrix(struct GlhTextObject *tob) {
 }
 
 void GlhTextObjectSetText(struct GlhTextObject *tob, char* string) {
-    char* oldState = tob->_text;
-    tob->_text = string;
+    char oldState[strlen(tob->_text) + 1];
+    strcpy(oldState, tob->_text);
+    int strl = strlen(string) + 1;
+    if(strl > tob->_textAllocated) {
+        tob->_text = realloc(tob->_text, strl);
+    }
+    strcpy(tob->_text, string);
     GlhTextObjectUpdateMesh(tob, oldState);
 }
 
@@ -763,13 +791,21 @@ void GlhInitTextObject(struct GlhTextObject *tob, char* string, struct GlhFont *
     vector_init(&tob->texCoords, 40, sizeof(float));
 
     glm_vec4_copy(color, tob->color);
-    tob->_text = NULL;
+    tob->_text = malloc(tob->_textAllocated = strlen(string) + 1);
+
+    glGenVertexArrays(1, &tob->bufferData.VAO);
+    glGenBuffers(1, &tob->bufferData.vertexBuffer);
+    glGenBuffers(1, &tob->bufferData.tcoordBuffer);
+    glGenBuffers(1, &tob->bufferData.normalBuffer);
+    glGenBuffers(1, &tob->bufferData.indexsBuffer);
+
     GlhTextObjectSetText(tob, string);
 }
 
 void GlhFreeTextObject(struct GlhTextObject *tob) {
     vector_free(&tob->verticies);
     vector_free(&tob->texCoords);
+    free(tob->_text);
 }
 
 int loadTexture(GLuint *texture, char* filename, bool alpha) {
