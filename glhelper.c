@@ -28,7 +28,7 @@ void memset_pattern(void* dest, size_t dest_size, void* pattern, size_t pattern_
         // first exponentially fill dest with bigger and bigger repeating chunks of the pattern
         // after that lds < ptn (because we stop filling for that precise reason)
         memcpy(dest, pattern, pattern_size);
-        while(ptn < lds) {
+        while(ptn <= lds) {
             memcpy(dest + ptn, dest, ptn);
             lds -= ptn;
             ptn *= 2;
@@ -59,7 +59,6 @@ int readFile(char* filename, int* size,char **content) {
     // null terminate
     (*content)[f_size] = '\0';
 	*size = f_size;
-    // debug info
 	return 0;
 }
 
@@ -121,12 +120,16 @@ int initProgram(char* fragSourceFilename, char* vertSourceFilename, GLuint *prog
 
 void GlhTransformsToMat4(struct GlhTransforms *tsf, mat4 *mat) {
     glm_mat4_identity(*mat);
-    // don't ask me why, but that is the correct order
+    vec3 reverseTransformOrigin;
+    glm_vec3_negate_to(tsf->transformsOrigin, reverseTransformOrigin);
+
     glm_translate(*mat, tsf->translation);
+    glm_scale(*mat, tsf->scale);
+    glm_translate(*mat, tsf->transformsOrigin);
     glm_rotate_x(*mat, tsf->rotation[0], *mat);
     glm_rotate_y(*mat, tsf->rotation[1], *mat);
     glm_rotate_z(*mat, tsf->rotation[2], *mat);
-    glm_scale(*mat, tsf->scale);
+    glm_translate(*mat, reverseTransformOrigin);
 }
 
 void GlhInitProgram(struct GlhProgram *prg, char* fragSourceFilename, char* vertSourceFilename, char* uniforms[], int uniformsCount, void (*setUniforms)()) {
@@ -197,6 +200,10 @@ void GlhInitContext(struct GlhContext *ctx, int windowWidth, int windowHeight, c
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glEnable(GL_DEPTH_TEST);
+    // mostly for text with slanted fonts because most of the letters
+    // will have the same z, and which would end up in a failing depth
+    // test with the regular GL_LESS depth function
+    glDepthFunc(GL_LEQUAL);
     #undef OPT
 }
 
@@ -346,9 +353,10 @@ void GlhFreeMesh(struct GlhMesh *mesh) {
 void GlhInitObject(struct GlhObject *obj, GLuint texture, vec3 scale, vec3 rotation, vec3 translation, struct GlhMesh *mesh, struct GlhProgram *program) {
     // store transforms into GlhTransforms struct
     struct GlhTransforms tsfm = {};
-    glm_vec3_dup(scale, tsfm.scale);
-    glm_vec3_dup(rotation, tsfm.rotation);
-    glm_vec3_dup(translation, tsfm.translation);
+    glm_vec3_copy(scale, tsfm.scale);
+    glm_vec3_copy(rotation, tsfm.rotation);
+    glm_vec3_copy(translation, tsfm.translation);
+    glm_vec3_zero(tsfm.transformsOrigin);
     // file GlhObject struct
     obj->type = regular;
     obj->transforms = tsfm;
@@ -754,6 +762,11 @@ void GlhTextObjectUpdateMesh(struct GlhTextObject *tob, char* OldString) {
     setAttribute(tob->bufferData.tcoordBuffer, 2, 2);
     // "vertex" here as the number drawn, not the actual one (time 6 for two triangles per quad)
     tob->bufferData.vertexCount = newLength * 6;
+    float max_y = vector_get(tob->verticies.data, tob->verticies.size -2, float);
+    float max_x = vector_get(tob->verticies.data, tob->verticies.size -3, float);
+
+    tob->transforms.transformsOrigin[0] = max_x * 0.5;
+    tob->transforms.transformsOrigin[1] = max_y * 0.5;
 }
 
 void GlhUpdateTextObjectModelMatrix(struct GlhTextObject *tob) {
@@ -786,6 +799,7 @@ void GlhInitTextObject(struct GlhTextObject *tob, char* string, struct GlhFont *
         glm_vec3_copy(GLM_VEC3_ZERO, tob->transforms.rotation);
         glm_vec3_copy(GLM_VEC3_ZERO, tob->transforms.translation);
         glm_vec3_copy(GLM_VEC3_ONE, tob->transforms.scale);
+        glm_vec3_zero(tob->transforms.transformsOrigin);
     }
     vector_init(&tob->verticies, 60, sizeof(float));
     vector_init(&tob->texCoords, 40, sizeof(float));

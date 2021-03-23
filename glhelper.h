@@ -20,6 +20,7 @@ struct GlhTransforms {
     vec3 scale;
     vec3 translation;
     vec3 rotation;
+    vec3 transformsOrigin;
 };
 // mostly internal stuff, should not be touched directly
 struct GlhMeshBufferData {
