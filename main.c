@@ -108,8 +108,6 @@ int main() {
     GlhComputeContextViewMatrix(&ctx);
     glClearColor(0.1, 0.1, 0.1, 1.0);
     GLuint indexes[2] = {tex, otex};
-    sleep(5);
-    bool first = true;
     while(!(glfwWindowShouldClose(ctx.window))) {
         GlhRunComputeShader(&cs, indexes[0], indexes[1], GL_RGBA8, GL_RGBA8, (int) ceil((float) texw / 16), (int) ceil((float) texh / 16));
         GLuint tmp = indexes[0];
@@ -118,10 +116,6 @@ int main() {
         GlhRenderContext(&ctx);
         glfwSwapBuffers(ctx.window);
         glfwPollEvents();
-        if(first) {
-            first = false;
-            usleep(500000);
-        }
     }
 
     GlhFreeMesh(&mesh);

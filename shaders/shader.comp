@@ -30,11 +30,11 @@ void main() {
         ivec2(pos.x - 1, pos.y + 0), ivec2(pos.x + 1, pos.y + 1)
     };
     int currentCell = colToCell(imageLoad(img_in, pos));
-    int aliveNeightbourCount = 0;
+    int aliveNeighbourCount = 0;
     for(int i = 0; i < 8; i++) {
-        aliveNeightbourCount += colToCell(imageLoad(img_in, poses[i]));
+        aliveNeighbourCount += colToCell(imageLoad(img_in, poses[i]));
     }
-    int outCell = currentCell == 1 ? (aliveNeightbourCount < 2 ? 0 : aliveNeightbourCount > 3 ? 0 : 1) : (aliveNeightbourCount == 3 ? 1 : 0);
+    int outCell = currentCell == 1 ? (aliveNeighbourCount < 2 ? 0 : aliveNeighbourCount > 3 ? 0 : 1) : (aliveNeighbourCount == 3 ? 1 : 0);
     imageStore(img_out, pos, cellToCol(outCell));
     // imageStore(img_out, pos, posColor);
 }
