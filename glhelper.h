@@ -151,3 +151,4 @@ char* GlhTextObjectGetText(struct GlhTextObject *tob);
 void GlhInitTextObject(struct GlhTextObject *tob, char* string, struct GlhFont *font, struct GlhProgram *prg, vec4 color, struct GlhTransforms *tsf);
 void GlhRenderTextObject(struct GlhTextObject *tob, struct GlhContext *ctx);
 void GlhFreeTextObject(struct GlhTextObject *tob);
+void createSingleColorTexture(GLuint *texture, float r, float g, float b);

@@ -223,10 +223,10 @@ void GlhComputeContextViewMatrix(struct GlhContext *ctx) {
     glm_vec3_negate_to(ctx->camera.position, translation);
     glm_vec3_negate_to(ctx->camera.rotation, rotation);
     glm_mat4_identity(ctx->cachedViewMatrix);
-    glm_translate(ctx->cachedViewMatrix, translation);
     glm_rotate_x(ctx->cachedViewMatrix, rotation[0], ctx->cachedViewMatrix);
     glm_rotate_y(ctx->cachedViewMatrix, rotation[1], ctx->cachedViewMatrix);
     glm_rotate_z(ctx->cachedViewMatrix, rotation[2], ctx->cachedViewMatrix);
+    glm_translate(ctx->cachedViewMatrix, translation);
 }
 
 void GlhComputeContextProjectionMatrix(struct GlhContext *ctx) { 
@@ -848,4 +848,19 @@ int loadTexture(GLuint *texture, char* filename, bool alpha) {
     // free image data
     stbi_image_free(data);
     return 0;
+}
+
+void createSingleColorTexture(GLuint *texture, float r, float g, float b) {
+    glGenTextures(1, texture);
+    glBindTexture(GL_TEXTURE_2D, *texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    char red = (char) ((int) (r * 255));
+    char green = (char) ((int) (g * 255));
+    char blue = (char) ((int) (b * 255));
+    char data[4] = {red, green, blue, 0xff};
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+    glGenerateMipmap(GL_TEXTURE_2D);
 }
