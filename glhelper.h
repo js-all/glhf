@@ -108,6 +108,10 @@ struct GlhProgram {
     void (*setGlobalUniforms)(void*, struct GlhContext*);
 };
 
+struct GlhComputeShader {
+    GLuint program;
+};
+
 void GlhInitProgram(struct GlhProgram *prg, char* fragSourceFilename, char* vertSourceFilename, char* uniforms[], int uniformsCount, void (*setUniforms)());
 void GlhFreeProgram(struct GlhProgram *prg);
 // initialize context, windowWidth and windowHeight can be 0, windowTitle can be NULL
@@ -151,5 +155,8 @@ char* GlhTextObjectGetText(struct GlhTextObject *tob);
 void GlhInitTextObject(struct GlhTextObject *tob, char* string, struct GlhFont *font, struct GlhProgram *prg, vec4 color, struct GlhTransforms *tsf);
 void GlhRenderTextObject(struct GlhTextObject *tob, struct GlhContext *ctx);
 void GlhFreeTextObject(struct GlhTextObject *tob);
-void createSingleColorTexture(GLuint *texture, float r, float g, float b);
 void saveImage(char* filepath, GLFWwindow* w);
+void GlhInitComputeShader(struct GlhComputeShader *cs, char* filename);
+void GlhRunComputeShader(struct GlhComputeShader *cs, GLuint inputTexture, GLuint outputTexture, GLenum sizedInFormat, GLenum sizedOutFormat, int workGroupsWidth, int workGroupsHeight);
+void createSingleColorTexture(GLuint *texture, float r, float g, float b);
+void createEmptySizedTexture(GLuint *texture, int width, int height, GLenum sizedFormat, GLenum format, GLenum type);

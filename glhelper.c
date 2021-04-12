@@ -824,14 +824,31 @@ void GlhFreeTextObject(struct GlhTextObject *tob) {
     free(tob->_text);
 }
 
+void GlhInitComputeShader(struct GlhComputeShader *cs, char* filename) {
+    GLuint shader;
+    loadShader(filename, GL_COMPUTE_SHADER, &shader);
+    cs->program = glCreateProgram();
+    glAttachShader(cs->program, shader);
+    glLinkProgram(cs->program);
+}
+
+void GlhRunComputeShader(struct GlhComputeShader *cs, GLuint inputTexture, GLuint outputTexture, GLenum sizedInFormat, GLenum sizedOutFormat, int workGroupsWidth, int workGroupsHeight) {
+    glUseProgram(cs->program);
+    glBindImageTexture(1, outputTexture, 0, GL_FALSE, 0, GL_WRITE_ONLY, sizedOutFormat);
+    glBindImageTexture(0, inputTexture, 0, GL_FALSE, 0, GL_READ_ONLY, sizedInFormat);
+    glBindTexture(GL_TEXTURE_2D, inputTexture);
+    glDispatchCompute(workGroupsWidth, workGroupsHeight, 1);
+    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+}
+
 int loadTexture(GLuint *texture, char* filename, bool alpha) {
     // create, bind texture and set parameters
     glGenTextures(1, texture);
     glBindTexture(GL_TEXTURE_2D, *texture);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     // read file and get width height and channels
     int width, height, nrChannels;
     // flip image because opengl use bottom left corner origin instead of top left
@@ -839,8 +856,9 @@ int loadTexture(GLuint *texture, char* filename, bool alpha) {
     unsigned char* data = stbi_load(filename, &width, &height, &nrChannels, 0);
     if(data) {
         GLenum format = alpha ? GL_RGBA : GL_RGB;
+        GLenum sizedFormat = alpha ? GL_RGBA8 : GL_RGB8;
         // put image data in texture
-        glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+        glTexImage2D(GL_TEXTURE_2D, 0, sizedFormat, width, height, 0, format, GL_UNSIGNED_BYTE, data);
         // generate mipmap to make sampling faster
         glGenerateMipmap(GL_TEXTURE_2D);
     } else {
@@ -868,16 +886,26 @@ void createSingleColorTexture(GLuint *texture, float r, float g, float b) {
 }
 
 void saveImage(char* filepath, GLFWwindow* w) {
- int width, height;
- glfwGetFramebufferSize(w, &width, &height);
- GLsizei nrChannels = 3;
- GLsizei stride = nrChannels * width;
- stride += (stride % 4) ? (4 - stride % 4) : 0;
- GLsizei bufferSize = stride * height;
- char* buffer = malloc(bufferSize);
- glPixelStorei(GL_PACK_ALIGNMENT, 4);
- glReadBuffer(GL_FRONT);
- glReadPixels(0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, buffer);
- stbi_flip_vertically_on_write(true);
- stbi_write_png(filepath, width, height, nrChannels, buffer, stride);
+    int width, height;
+    glfwGetFramebufferSize(w, &width, &height);
+    GLsizei nrChannels = 3;
+    GLsizei stride = nrChannels * width;
+    stride += (stride % 4) ? (4 - stride % 4) : 0;
+    GLsizei bufferSize = stride * height;
+    char* buffer = malloc(bufferSize);
+    glPixelStorei(GL_PACK_ALIGNMENT, 4);
+    glReadBuffer(GL_FRONT);
+    glReadPixels(0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, buffer);
+    stbi_flip_vertically_on_write(true);
+    stbi_write_png(filepath, width, height, nrChannels, buffer, stride);
+}
+void createEmptySizedTexture(GLuint *texture, int width, int height, GLenum sizedFormat, GLenum format, GLenum type) {
+    glGenTextures(1, texture);
+    glBindTexture(GL_TEXTURE_2D, *texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexImage2D(GL_TEXTURE_2D, 0, sizedFormat, width, height, 0, format, type, NULL);
+    glGenerateMipmap(GL_TEXTURE_2D);
 }

@@ -5,6 +5,7 @@
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 #include <string.h>
+#include <unistd.h>
 #ifndef glClear
 #include <GL/gl.h>
 #endif
@@ -19,14 +20,6 @@ void setUniforms(struct GlhObject *obj, struct GlhContext *ctx) {
     glm_mat4_mul(ctx->cachedViewMatrix, obj->cachedModelMatrix, mv);
     glm_mat4_mul(ctx->cachedProjectionMatrix, mv, mvp);
     glUniformMatrix4fv(vector_get(obj->program->uniformsLocation.data, 0, GLint), 1, GL_FALSE,(float*) mvp);
-}
-
-void textProgramSetUniforms(struct GlhTextObject *tob, struct GlhContext *ctx) {
-    mat4 mvp, mv;
-    glm_mat4_mul(ctx->cachedViewMatrix, tob->cachedModelMatrix, mv);
-    glm_mat4_mul(ctx->cachedProjectionMatrix, mv, mvp);
-    glUniformMatrix4fv(vector_get(tob->program->uniformsLocation.data, 0, GLint), 1, GL_FALSE,(float*) mvp);
-    glUniform4fv(vector_get(tob->program->uniformsLocation.data, 1, GLint), 1, (float*) tob->color);
 }
 
 void handleDebugMessage(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* message, const void* userParam) { 
@@ -53,19 +46,17 @@ int main() {
         printf("glfw did not initialize\n");
         return -1;
     }
-    GlhInitFreeType();
     GlhInitContext(&ctx, 640, 480, "nothing here");
 
     GLuint tex;
-    GLuint tex2;
-    loadTexture(&tex, "images/tuxs.png", true);
-    loadTexture(&tex2, "images/texture.jpeg", false);
+    loadTexture(&tex, "images/texture.png", true);
 
-    struct GlhFont font;
-    GlhInitFont(&font, "fonts/Roboto-Regular.ttf", 128, -1, 0.95);
-
-    struct GlhFontGLyphData gd;
-    map_get(&font.glyphsData, "a", &gd);
+    int texw, texh;
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &texw);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &texh);
+    GLuint otex;
+    createEmptySizedTexture(&otex, texw, texh, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE);
 
     struct GlhMesh mesh;
     // fill mesh
@@ -96,76 +87,41 @@ int main() {
     char* uniforms[] = {
         "MVP"
     };
-    char* textUniforms[] = {
-        "MVP",
-        "color"
-    };
-    vec4 color = {1.0, 1.0, 1.0, 1.0};
 
     struct GlhProgram prg;
-    struct GlhProgram txtPrg;
     GlhInitProgram(&prg, "shaders/shader.frag", "shaders/shader.vert", uniforms, 1, setUniforms);
-    GlhInitProgram(&txtPrg, "shaders/text.frag", "shaders/text.vert", textUniforms, 2, textProgramSetUniforms);
 
-    struct GlhObject obj;
-    struct GlhObject ground;
-    GlhInitObject(&obj,tex, GLM_VEC3_ONE, GLM_VEC3_ZERO, GLM_VEC3_ZERO, &mesh, &prg);
-    GlhInitObject(&ground, tex2, GLM_VEC3_ONE, GLM_VEC3_ZERO, GLM_VEC3_ZERO, &mesh, &prg);
+    struct GlhComputeShader cs;
+    GlhInitComputeShader(&cs, "shaders/shader.comp");
 
-    struct GlhTextObject tob;
-    GlhInitTextObject(&tob, "aa   a  a       aa", &font, &txtPrg, color, NULL);
+    struct GlhObject plane;
+    GlhInitObject(&plane, tex, GLM_VEC3_ONE, GLM_VEC3_ZERO, GLM_VEC3_ZERO, &mesh, &prg);
+    glm_vec3_scale(plane.transforms.scale, 0.8, plane.transforms.scale);
+    plane.transforms.translation[2] = -1;
 
-    glm_vec3_scale(obj.transforms.scale, 0.3, obj.transforms.scale);
-    obj.transforms.translation[2] = -2;
-    obj.transforms.translation[1] = -0.05;
-    glm_vec3_scale(ground.transforms.scale, 1.4, ground.transforms.scale);
-    ground.transforms.rotation[0] = M_PI_2;
-    ground.transforms.rotation[2] = M_PI;
-    ground.transforms.translation[1] = -0.3;
-    ground.transforms.translation[2] = -2.1;
-    tob.transforms.translation[2] = -1;
-    tob.transforms.translation[1] = 0.5;
-    glm_vec3_scale(tob.transforms.scale, 0.14, tob.transforms.scale);
-    GlhUpdateObjectModelMatrix(&ground);
-    //GlhContextAppendChild(&ctx, &ground);
-    //GlhContextAppendChild(&ctx, &obj);
-    GlhContextAppendChild(&ctx, &tob);
-    ctx.camera.position[1] = 0.5;
-    ctx.camera.position[2] = 1;
-    ctx.camera.fov = glm_rad(45);
+    GlhUpdateObjectModelMatrix(&plane);
+    GlhContextAppendChild(&ctx, &plane);
+
+    ctx.camera.perspective = false;
+
     GlhComputeContextProjectionMatrix(&ctx);
+    GlhComputeContextViewMatrix(&ctx);
     glClearColor(0.1, 0.1, 0.1, 1.0);
-    double time;
+    GLuint indexes[2] = {tex, otex};
     while(!(glfwWindowShouldClose(ctx.window))) {
-        time = sin((glfwGetTime() * 1.5 - 3) / 2.5 * M_PI_2) * 2.5;
-        // obj.transforms.rotation[1] = sin(time*1.5) * 0.1;
-        // obj.transforms.rotation[2] = cos(time*1.5) * 0.05;
-        // obj.transforms.scale[0] = ( sin(time*2+1) + 1) / 2 / 12 + 0.3;
-        // obj.transforms.translation[0] = sin(time) / 4;
-        // obj.transforms.translation[2] = cos(time) / 4 -1.5;
-        // obj.transforms.translation[1] = fabs(cos(time* 4)) / 16;
-        // ctx.camera.rotation[0] = (sin(time) + 1) / 4 - 0.5;
-        // GlhUpdateObjectModelMatrix(&obj);
-        tob.transforms.translation[0] = pow(time * .5, 2) * time * .5 - 0.7;
-        tob.transforms.rotation[1] = (tob.transforms.translation[0] + 0.7) * 5;
-        tob.transforms.rotation[2] = tob.transforms.rotation[1] * 0.2;
-        GlhUpdateTextObjectModelMatrix(&tob);
-        GlhComputeContextViewMatrix(&ctx);
+        GlhRunComputeShader(&cs, indexes[0], indexes[1], GL_RGBA8, GL_RGBA8, (int) ceil((float) texw / 16), (int) ceil((float) texh / 16));
+        GLuint tmp = indexes[0];
+        indexes[0] = indexes[1];
+        indexes[1] = tmp;
         GlhRenderContext(&ctx);
         glfwSwapBuffers(ctx.window);
         glfwPollEvents();
     }
 
     GlhFreeMesh(&mesh);
-    GlhFreeObject(&obj);
-    GlhFreeObject(&ground);
-    GlhFreeTextObject(&tob);
+    GlhFreeObject(&plane);
     GlhFreeProgram(&prg);
-    GlhFreeProgram(&txtPrg);
     GlhFreeContext(&ctx);
-    GlhFreeFont(&font);
-    //? causes a seg fault 
-    //GlhFreeFreeType();
     glfwTerminate();
 
     return 0;
