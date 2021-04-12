@@ -1,6 +1,11 @@
 CFLAGS=-Wall -g #-fsanitize=address -fno-omit-frame-pointer
 LDFLAGS=-lglfw -lGL -lm -lGLEW -lX11 -lGLU -DGLEW_STATIC -lfreetype
 
+
+run: build
+	@echo build/a.out
+	@echo ""
+	@build/a.out
 build: build/main.o build/vector.o build/glhelper.o build/maps.o build/events.o
 	gcc $(CFLAGS) -o build/a.out build/main.o build/vector.o build/events.o build/maps.o build/glhelper.o $(LDFLAGS)
 	chmod +x build/a.out
@@ -19,11 +24,6 @@ build/tests.o: tests.c
 	gcc $(CFLAGS) -c tests.c -o build/tests.o $(LDFLAGS)
 clean:
 	find build -type f -not -name '.placeholder' -delete
-
-run: build
-	@echo build/a.out
-	@echo ""
-	@build/a.out
 
 test: build/tests.o build/vector.o build/events.o build/maps.o
 	gcc build/tests.o build/vector.o build/events.o build/maps.o -o build/tests

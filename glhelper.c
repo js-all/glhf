@@ -4,6 +4,8 @@
 #include <ctype.h>
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include <stb_image_write.h>
 #include "glhelper.h"
 #include <ft2build.h>
 #include FT_FREETYPE_H
@@ -863,4 +865,19 @@ void createSingleColorTexture(GLuint *texture, float r, float g, float b) {
     char data[4] = {red, green, blue, 0xff};
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
     glGenerateMipmap(GL_TEXTURE_2D);
+}
+
+void saveImage(char* filepath, GLFWwindow* w) {
+ int width, height;
+ glfwGetFramebufferSize(w, &width, &height);
+ GLsizei nrChannels = 3;
+ GLsizei stride = nrChannels * width;
+ stride += (stride % 4) ? (4 - stride % 4) : 0;
+ GLsizei bufferSize = stride * height;
+ char* buffer = malloc(bufferSize);
+ glPixelStorei(GL_PACK_ALIGNMENT, 4);
+ glReadBuffer(GL_FRONT);
+ glReadPixels(0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, buffer);
+ stbi_flip_vertically_on_write(true);
+ stbi_write_png(filepath, width, height, nrChannels, buffer, stride);
 }

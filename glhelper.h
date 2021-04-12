@@ -152,3 +152,4 @@ void GlhInitTextObject(struct GlhTextObject *tob, char* string, struct GlhFont *
 void GlhRenderTextObject(struct GlhTextObject *tob, struct GlhContext *ctx);
 void GlhFreeTextObject(struct GlhTextObject *tob);
 void createSingleColorTexture(GLuint *texture, float r, float g, float b);
+void saveImage(char* filepath, GLFWwindow* w);
