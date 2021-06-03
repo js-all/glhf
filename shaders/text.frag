@@ -1,10 +1,10 @@
 #version 420
 
 in vec2 texCoord;
+in vec4 color;
 
 out vec4 FragColor;
 
-uniform vec4 color; 
 uniform sampler2D uTexture;
 
 void main() {

@@ -28,6 +28,7 @@ struct GlhMeshBufferData {
     GLuint normalBuffer;
     GLuint indexsBuffer;
     GLuint tcoordBuffer;
+    GLuint colorsBuffer;
     GLuint VAO;
     int vertexCount;
 };
@@ -62,10 +63,12 @@ struct GlhTextObject {
     struct GlhProgram *program;
     struct GlhTransforms transforms;
     struct GlhMeshBufferData bufferData;
+    struct GlhMeshBufferData backgroundQuadBufferData;
     char* _text;
     size_t _textAllocated;
     mat4 cachedModelMatrix;
     vec4 color;
+    vec4 backgroundColor;
     Vector verticies;
     Vector texCoords;
 };
@@ -86,6 +89,11 @@ struct GlhFontGLyphData {
     float x_off;
     float y_off;
     float advance;
+};
+
+struct GlhBoundingBox {
+    vec3 start;
+    vec3 end;
 };
 
 //! as of now, applications should only have a single context, and would probably break otherwise
@@ -147,14 +155,18 @@ void GlhFreeFreeType();
 // 1 will be defaulted to 0.99, 0 to 0.75, the higher the value, the denser it gets.
 void GlhInitFont(struct GlhFont *font, char* ttfFileName, int size, int glyphCount, float packingPrecision);
 void GlhFreeFont(struct GlhFont *font);
+float GlhFontGetTextWidth(struct GlhFont *font, char* text);
+struct GlhBoundingBox GlhTextObjectGetBoundingBox(struct GlhTextObject *tob, float margin);
+void GlhApplyTransformsToBoundingBox(struct GlhBoundingBox *box, struct GlhTransforms transforms);
 void GlhTextObjectUpdateMesh(struct GlhTextObject *tob, char* OldString);
 void GlhUpdateTextObjectModelMatrix(struct GlhTextObject *tob);
 void GlhTextObjectSetText(struct GlhTextObject *tob, char* string);
 char* GlhTextObjectGetText(struct GlhTextObject *tob);
 // transforms can be NULL
-void GlhInitTextObject(struct GlhTextObject *tob, char* string, struct GlhFont *font, struct GlhProgram *prg, vec4 color, struct GlhTransforms *tsf);
+void GlhInitTextObject(struct GlhTextObject *tob, char* string, struct GlhFont *font, struct GlhProgram *prg, vec4 color, vec4 backgroundColor, struct GlhTransforms *tsf);
 void GlhRenderTextObject(struct GlhTextObject *tob, struct GlhContext *ctx);
 void GlhFreeTextObject(struct GlhTextObject *tob);
+struct GlhTransforms GlhGetIdentityTransform();
 void saveImage(char* filepath, GLFWwindow* w);
 void GlhInitComputeShader(struct GlhComputeShader *cs, char* filename);
 void GlhRunComputeShader(struct GlhComputeShader *cs, GLuint inputTexture, GLuint outputTexture, GLenum sizedInFormat, GLenum sizedOutFormat, int workGroupsWidth, int workGroupsHeight);

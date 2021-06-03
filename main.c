@@ -22,6 +22,13 @@ void setUniforms(struct GlhObject *obj, struct GlhContext *ctx) {
     glUniformMatrix4fv(vector_get(obj->program->uniformsLocation.data, 0, GLint), 1, GL_FALSE,(float*) mvp);
 }
 
+void setTextUniforms(struct GlhTextObject *obj, struct GlhContext *ctx) {
+    mat4 mvp, mv;
+    glm_mat4_mul(ctx->cachedViewMatrix, obj->cachedModelMatrix, mv);
+    glm_mat4_mul(ctx->cachedProjectionMatrix, mv, mvp);
+    glUniformMatrix4fv(vector_get(obj->program->uniformsLocation.data, 0, GLint), 1, GL_FALSE,(float*) mvp);
+}
+
 void handleDebugMessage(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* message, const void* userParam) { 
     char* sev;
     char* typ;
@@ -40,6 +47,11 @@ void handleDebugMessage(GLenum source, GLenum type, GLuint id, GLenum severity, 
     printf("\033[32m[GLDEBUG]\033[0m%s%s: %s\n", sev, typ, message);
 }
 
+void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
+    glViewport(0, 0, width, height);
+    GlhComputeContextProjectionMatrix(&ctx);
+}
+
 int main() {
     
     if(!glfwInit()) {
@@ -47,17 +59,8 @@ int main() {
         return -1;
     }
     GlhInitContext(&ctx, 640, 480, "nothing here");
-
-    GLuint tex;
-    loadTexture(&tex, "images/texture.png", true);
-
-    int texw, texh;
-    glBindTexture(GL_TEXTURE_2D, tex);
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &texw);
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &texh);
-    GLuint otex;
-    createEmptySizedTexture(&otex, texw, texh, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE);
-
+    glfwSetFramebufferSizeCallback(ctx.window, framebuffer_size_callback);
+    GlhInitFreeType();
     struct GlhMesh mesh;
     // fill mesh
     {
@@ -87,32 +90,60 @@ int main() {
     char* uniforms[] = {
         "MVP"
     };
+    char* textUniforms[] = {
+        "MVP",
+        "uTexture"
+    };
 
     struct GlhProgram prg;
     GlhInitProgram(&prg, "shaders/shader.frag", "shaders/shader.vert", uniforms, 1, setUniforms);
 
-    struct GlhComputeShader cs;
-    GlhInitComputeShader(&cs, "shaders/shader.comp");
+    struct GlhFont font;
+    GlhInitFont(&font, "fonts/Roboto-Regular.ttf", 128, -1, 0.95);
+
+    struct GlhProgram tprg;
+    GlhInitProgram(&tprg, "shaders/text.frag", "shaders/text.vert", textUniforms, 2, setTextUniforms);
+
+    struct GlhTransforms tsf = GlhGetIdentityTransform();
+    tsf.translation[2] = -1;
+    glm_vec3_scale(tsf.scale, 0.1, tsf.scale);
+
+    struct GlhTextObject to;
+    vec4 color = {1.0, 1.0, 1.0, 1.0};
+    vec4 backgoroundColor = {0.0, 0.0, 0.0, 0.8};
+    GlhInitTextObject(&to, "Letters be rendered\0", &font, &tprg, color, backgoroundColor, &tsf);
+    GlhUpdateTextObjectModelMatrix(&to);
+
+
+    GLuint tex;
+    createSingleColorTexture(&tex, 1.0, 0.0, 0.0);
 
     struct GlhObject plane;
     GlhInitObject(&plane, tex, GLM_VEC3_ONE, GLM_VEC3_ZERO, GLM_VEC3_ZERO, &mesh, &prg);
-    glm_vec3_scale(plane.transforms.scale, 0.8, plane.transforms.scale);
-    plane.transforms.translation[2] = -1;
+    glm_vec3_scale(plane.transforms.scale, 20, plane.transforms.scale);
+    plane.transforms.scale[0] *= 16.0 / 9;
+    plane.transforms.translation[2] = -40;
 
     GlhUpdateObjectModelMatrix(&plane);
     GlhContextAppendChild(&ctx, &plane);
-
-    ctx.camera.perspective = false;
+    GlhContextAppendChild(&ctx, &to);
 
     GlhComputeContextProjectionMatrix(&ctx);
     GlhComputeContextViewMatrix(&ctx);
-    glClearColor(0.1, 0.1, 0.1, 1.0);
-    GLuint indexes[2] = {tex, otex};
+    glClearColor(1, 1, 1, 1);
     while(!(glfwWindowShouldClose(ctx.window))) {
-        GlhRunComputeShader(&cs, indexes[0], indexes[1], GL_RGBA8, GL_RGBA8, (int) ceil((float) texw / 16), (int) ceil((float) texh / 16));
-        GLuint tmp = indexes[0];
-        indexes[0] = indexes[1];
-        indexes[1] = tmp;
+        int width, height;
+        glfwGetFramebufferSize(ctx.window, &width, &height);
+
+
+        float ratio = (float) width / height;
+        struct GlhBoundingBox box = GlhTextObjectGetBoundingBox(&to, 0.2);
+        GlhApplyTransformsToBoundingBox(&box, to.transforms);
+        float toWidth = box.end[0] - box.start[0];
+
+        to.transforms.translation[0] = ratio - toWidth + 0.2 * to.transforms.scale[0];
+        GlhUpdateTextObjectModelMatrix(&to);
+
         GlhRenderContext(&ctx);
         glfwSwapBuffers(ctx.window);
         glfwPollEvents();
@@ -123,6 +154,5 @@ int main() {
     GlhFreeProgram(&prg);
     GlhFreeContext(&ctx);
     glfwTerminate();
-
     return 0;
 }
