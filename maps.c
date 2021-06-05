@@ -51,6 +51,6 @@ void map_delete(Map *map, char* key) {
 }
 
 void map_free(Map *map) {
-    vector_free(&map->keyVector);
-    vector_free(&map->valuesVector);
+    vector_free(map->keyVector);
+    vector_free(map->valuesVector);
 }

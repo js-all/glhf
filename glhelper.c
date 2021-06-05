@@ -24,6 +24,10 @@ static const int CharMarginSize = 2;
 
 static char fontGlyphDataMapDefaultKey[9] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, '\0'};
 
+struct GlhGlobalShaders GlobalShaders;
+
+bool globalShadersReady;
+
 FT_Library ft;
 
 unsigned int OpenGLObjectLabelID = 0;
@@ -56,6 +60,7 @@ void set_opengl_label(GLenum identifier, GLuint name, char* label) {
     int labelLength = suffixlesLabelLength + 1 + 5 + 1;
     char newLabel[labelLength];
     sprintf(newLabel, "%s_%05u", label, OpenGLObjectLabelID++);
+    printf("setting label %s (for %u)\n", newLabel, name);
     glObjectLabel(identifier, name, labelLength, newLabel);
 }
 
@@ -94,18 +99,6 @@ int loadShader(char* filename, int type, GLuint *shader) {
     set_opengl_label(GL_SHADER, *shader, "SHADER");
     glShaderSource(*shader, 1, &shader_source, NULL);
     glCompileShader(*shader);
-    // retreive debug info
-    GLint status;
-    GLenum error;
-    int logsLength;
-    error = glGetError();
-    glGetShaderiv(*shader, GL_COMPILE_STATUS, &status);
-    glGetShaderiv(*shader, GL_INFO_LOG_LENGTH, &logsLength);
-    char log[logsLength+1];
-    memset(log, '\0', logsLength+1);
-    glGetShaderInfoLog(*shader, logsLength, NULL, log);
-    // print debug info
-    printf("compiled shader %s, compile status: %i (GL_TRUE: %i), error: %i, logs: [%i]\n%s\n", filename, status, GL_TRUE, error, logsLength, log);
     // free precedentaly allocated memory for source
     free(source);
     return 0;
@@ -121,19 +114,8 @@ int initProgram(char* fragSourceFilename, char* vertSourceFilename, GLuint *prog
     // attaches the shaders to the program
     glAttachShader(*program, vert);
     glAttachShader(*program, frag);
-    // get debug info
-    GLint status;
-    GLenum error;
-    int logsLength;
+
     glLinkProgram(*program);
-    error = glGetError();
-    glGetProgramiv(*program, GL_LINK_STATUS, &status);
-    glGetProgramiv(*program, GL_INFO_LOG_LENGTH, &logsLength);
-    char logs[logsLength+1];
-    memset(logs, '\0', logsLength+1);
-    glGetProgramInfoLog(*program, logsLength, NULL, logs);
-    // print it
-    printf("linking status: %i, error: %i, logs: [%i] \n%s\n", status, error, logsLength, logs);
     return 0;
 }
 
@@ -163,7 +145,6 @@ void GlhInitProgram(struct GlhProgram *prg, char* fragSourceFilename, char* vert
     int attributesCount = sizeof(attributes) / sizeof(attributes[0]);
     // init shader program
     prg->shaderProgram = glCreateProgram();
-    set_opengl_label(GL_PROGRAM, prg->shaderProgram, "SHADER_PROGRAM");
 
     // set attribute location to the indexes of the attributes array
     for(int i = 0; i < attributesCount; i++) {
@@ -186,17 +167,191 @@ void GlhInitProgram(struct GlhProgram *prg, char* fragSourceFilename, char* vert
         GLint v = glGetUniformLocation(prg->shaderProgram, vector_get(prg->uniforms.data, i, char*));
         vector_push(&prg->uniformsLocation, &v);
     }
-    // print here to separate things a bit better and for debug output to be easier to read
-    printf("\n");
+    set_opengl_label(GL_PROGRAM, prg->shaderProgram, "SHADER_PROGRAM");
     // set the setGlobalUniforms function pointer
     prg->setGlobalUniforms = setUniforms;
 }
 
+void __GS_glyphs_uniform(struct GlhTextObject *obj, struct GlhContext *ctx) {
+    mat4 mvp, mv;
+    glm_mat4_mul(ctx->cachedViewMatrix, obj->cachedModelMatrix, mv);
+    glm_mat4_mul(ctx->cachedProjectionMatrix, mv, mvp);
+    glUniformMatrix4fv(vector_get(obj->glyphProgram->uniformsLocation.data, 0, GLint), 1, GL_FALSE,(float*) mvp);
+}
+
+void __GS_text_uniform(struct GlhTextObject *obj, struct GlhContext *ctx) {
+    mat4 mvp, mv;
+    glm_mat4_mul(ctx->cachedViewMatrix, obj->cachedModelMatrix, mv);
+    glm_mat4_mul(ctx->cachedProjectionMatrix, mv, mvp);
+    glUniformMatrix4fv(vector_get(obj->glyphProgram->uniformsLocation.data, 0, GLint), 1, GL_FALSE,(float*) mvp);
+}
+
+void _makeGlobalShaderReady() {
+    if(globalShadersReady) return;
+
+    char* glyphs_uniforms[] = {
+        "MVP",
+        "uTexture"
+    };
+    char* text_uniforms[] = {
+        "MVP",
+        "uTexture"
+    };
+
+    GlhInitProgram(&GlobalShaders.glyphs, "shaders/glyphs.frag", "shaders/glyphs.vert", glyphs_uniforms, 2, __GS_glyphs_uniform);
+    GlhInitProgram(&GlobalShaders.text, "shaders/text.frag", "shaders/text.vert", text_uniforms, 2, __GS_text_uniform);
+}
+
+void GlhDeleteFBO(struct GlhFBOProvider *provider, struct GlhFBO fbo) {
+    // getting a pointer because fbo could be a copy and outdated
+    struct GlhFBO *pfbo = vector_get_pointer_to(provider->FBOs, fbo.id);
+
+    if(pfbo->active) {
+        printf("WARN: deleting active FBO\n");
+    }
+
+    switch (fbo.type) {
+        case FBSizedTexture:
+        {
+            glDeleteTextures(1, &fbo.attachments[0]);
+            glDeleteRenderbuffers(1, &fbo.attachments[1]);
+            glDeleteFramebuffers(1, &fbo.FBO);
+        }
+        break;
+    }
+
+    vector_splice(&provider->FBOs, fbo.id, 1);
+}
+
+bool GlhVerrifieFBO(struct GlhFBOProvider *provider, struct GlhFBO fbo) {
+    bool valid = true;
+
+    switch (fbo.type) {
+        case FBSizedTexture:
+        {   
+            int width, height;
+            glfwGetFramebufferSize(provider->ctx->window, &width, &height);
+
+            int w, h;
+            int miplevel = 0;
+            glBindTexture(GL_TEXTURE_2D, fbo.attachments[0]);
+            glGetTexLevelParameteriv(GL_TEXTURE_2D, miplevel, GL_TEXTURE_WIDTH, &w);
+            glGetTexLevelParameteriv(GL_TEXTURE_2D, miplevel, GL_TEXTURE_HEIGHT, &h);
+
+            if(w != width || h != height){
+                valid = false;
+            }
+        }
+        break;
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo.FBO);
+    if(glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        valid = false;
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    if(fbo.active && !valid) {
+        printf("WARN: found invalid active FBO\n");
+    }
+
+    return valid;
+}
+
+struct GlhFBO GlhRequestFBO(struct GlhFBOProvider *provider, enum GlhFBOType type) {
+    int found = -1;
+    for(int i = 0; i < provider->FBOs.size; i++) {
+        struct GlhFBO fbo = vector_get(provider->FBOs.data, i, struct GlhFBO);
+        bool valid = GlhVerrifieFBO(provider, fbo);
+
+        if(!valid) {
+            GlhDeleteFBO(provider, fbo);
+            // to stay at the same index next iteration
+            i--;
+            continue;
+        }
+
+        if(!fbo.active && fbo.type == type) {
+            found = i;
+            break;
+        }
+    }
+    if(found != -1) {
+        struct GlhFBO *fbo = vector_get_pointer_to(provider->FBOs, found);        
+
+        fbo->active = true;
+
+        switch (fbo->type) {
+            case FBSizedTexture:
+            {
+                glBindFramebuffer(GL_FRAMEBUFFER, fbo->FBO);
+                GLfloat oldClearColor[4];
+                glGetFloatv(GL_COLOR_CLEAR_VALUE, oldClearColor);
+                glClearColor(0, 0, 0, 0);
+                glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+                glBindFramebuffer(GL_FRAMEBUFFER, 0);
+                glClearColor(oldClearColor[0], oldClearColor[1], oldClearColor[2], oldClearColor[3]);
+            }
+            break;
+        }
+
+        return *fbo;
+    }
+    struct GlhFBO fbo;
+    fbo.active = true;
+    fbo.type = type;
+    fbo.id = provider->FBOs.size;
+
+    switch (type) {
+        case FBSizedTexture:
+        {
+            int width, height;
+            glfwGetFramebufferSize(provider->ctx->window, &width, &height);
+    
+            GLuint texture;
+            glGenTextures(1, &texture);
+            glBindTexture(GL_TEXTURE_2D, texture);
+            set_opengl_label(GL_TEXTURE, texture, "TEXTURE_FBO_FBSIZED");
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
+            glGenerateMipmap(GL_TEXTURE_2D);
+
+            unsigned int rbo;
+            glGenRenderbuffers(1, &rbo);
+            glBindRenderbuffer(GL_RENDERBUFFER, rbo);
+            set_opengl_label(GL_RENDERBUFFER, rbo, "RENDERBUFFER_FBO_FBSIZED");
+            glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, width, height);  
+
+            glGenFramebuffers(1, &fbo.FBO);
+            glBindFramebuffer(GL_FRAMEBUFFER, fbo.FBO);
+            set_opengl_label(GL_FRAMEBUFFER, fbo.FBO, "FBO_FBSIZED");
+
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
+            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rbo);
+
+            fbo.attachments[0] = texture;
+            fbo.attachments[1] = rbo;
+
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        }
+        break;
+    }
+    vector_push(&provider->FBOs, &fbo);
+    return fbo;
+}
+
+void GlhReleaseFBO(struct GlhFBOProvider provider, struct GlhFBO fbo) {
+    struct GlhFBO *pfbo = vector_get_pointer_to(provider.FBOs, fbo.id);
+    pfbo->active = false;
+}
+
 void GlhFreeProgram(struct GlhProgram *prg) {
     // free allocated vectors
-    vector_free(&prg->attributes);
-    vector_free(&prg->uniforms);
-    vector_free(&prg->uniformsLocation);
+    vector_free(prg->attributes);
+    vector_free(prg->uniforms);
+    vector_free(prg->uniformsLocation);
 }
 
 void GlhInitContext(struct GlhContext *ctx, int windowWidth, int windowHeight, char* windowTitle) {
@@ -220,6 +375,8 @@ void GlhInitContext(struct GlhContext *ctx, int windowWidth, int windowHeight, c
     ctx->camera.perspective = true;
     // init children vector
     vector_init(&ctx->children, 2, sizeof(void*));
+    vector_init(&ctx->FBOProvider.FBOs, 2, sizeof(struct GlhFBO));
+    ctx->FBOProvider.ctx = ctx;
     // get window width and height
     int width, height;
     glfwGetWindowSize(ctx->window, &width, &height);
@@ -234,10 +391,13 @@ void GlhInitContext(struct GlhContext *ctx, int windowWidth, int windowHeight, c
     // test with the regular GL_LESS depth function
     glDepthFunc(GL_LEQUAL);
     #undef OPT
+
+    _makeGlobalShaderReady();
 }
 
 void GlhFreeContext(struct GlhContext *ctx) {
-    vector_free(&ctx->children);
+    vector_free(ctx->children);
+    vector_free(ctx->FBOProvider.FBOs);
 }
 
 void GlhContextAppendChild(struct GlhContext *ctx, void *child) {
@@ -308,21 +468,35 @@ void GlhRenderObject(struct GlhObject *obj, struct GlhContext *ctx) {
     glDrawElements(GL_TRIANGLES, obj->mesh->bufferData.vertexCount, GL_UNSIGNED_INT, NULL);
 }
 
-// basically a copy paste of GlhRenderObject
 void GlhRenderTextObject(struct GlhTextObject *tob, struct GlhContext *ctx) {
-    glUseProgram(tob->program->shaderProgram);
+    // get FBO to render the text to
+    struct GlhFBO fbo = GlhRequestFBO(&ctx->FBOProvider, FBSizedTexture);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo.FBO);
+
+    glUseProgram(tob->glyphProgram->shaderProgram);
     // set the uniforms related to the program
-    (*tob->program->setGlobalUniforms)(tob, ctx);
+    (*tob->glyphProgram->setGlobalUniforms)(tob, ctx);
     // bind objects's texture
     glBindTexture(GL_TEXTURE_2D, tob->font->texture);
-    // bind background VAO
-    glBindVertexArray(tob->backgroundQuadBufferData.VAO);
-    // draw background
-    glDrawElements(GL_TRIANGLES, tob->backgroundQuadBufferData.vertexBuffer, GL_UNSIGNED_INT, NULL);
     // bind VAO
     glBindVertexArray(tob->bufferData.VAO);
     // draw object
     glDrawElements(GL_TRIANGLES, tob->bufferData.vertexCount, GL_UNSIGNED_INT, NULL);
+    // unbind FBO
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    glUseProgram(tob->textProgram->shaderProgram);
+    // set the uniforms related to the program
+    (*tob->textProgram->setGlobalUniforms)(tob, ctx);
+
+    glBindTexture(GL_TEXTURE_2D, fbo.attachments[0]);
+    // bind background VAO
+    glBindVertexArray(tob->backgroundQuadBufferData.VAO);
+    // draw background
+    glDrawElements(GL_TRIANGLES, tob->backgroundQuadBufferData.vertexCount, GL_UNSIGNED_INT, NULL);
+
+    GlhReleaseFBO(ctx->FBOProvider, fbo);
 }
 
 void GlhRenderContext(struct GlhContext *ctx) {
@@ -378,10 +552,10 @@ void GlhInitMesh(struct GlhMesh *mesh, vec3 verticies[], int verticiesCount, vec
 }
 
 void GlhFreeMesh(struct GlhMesh *mesh) {
-    vector_free(&mesh->verticies);
-    vector_free(&mesh->normals);
-    vector_free(&mesh->indexes);
-    vector_free(&mesh->texCoords);
+    vector_free(mesh->verticies);
+    vector_free(mesh->normals);
+    vector_free(mesh->indexes);
+    vector_free(mesh->texCoords);
 }
 
 void GlhInitObject(struct GlhObject *obj, GLuint texture, vec3 scale, vec3 rotation, vec3 translation, struct GlhMesh *mesh, struct GlhProgram *program) {
@@ -686,9 +860,9 @@ void GlhInitFont(struct GlhFont *font, char* ttfFileName, int size, int glyphCou
     // create opengl texture
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1); // to be able to use single channel textures
     glGenTextures(1, &font->texture);
+    glBindTexture(GL_TEXTURE_2D, font->texture);
     set_opengl_label(GL_TEXTURE, font->texture, "TEXTURE_FONT_ATLAS");
 
-    glBindTexture(GL_TEXTURE_2D, font->texture);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -849,13 +1023,11 @@ void GlhTextObjectUpdateMesh(struct GlhTextObject *tob, char* OldString) {
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indiciesArr), indiciesArr, GL_DYNAMIC_DRAW);
     // put data in buffers, using glBufferSubData if possible (= if no realloc needed)
     if(oldLength != newLength || OldString == NULL) {
-        printf("buffer data\n");
         glBindBuffer(GL_ARRAY_BUFFER, tob->bufferData.vertexBuffer);
         glBufferData(GL_ARRAY_BUFFER, tob->verticies.size * tob->verticies.data_size, tob->verticies.data, GL_DYNAMIC_DRAW);
         glBindBuffer(GL_ARRAY_BUFFER, tob->bufferData.tcoordBuffer);
         glBufferData(GL_ARRAY_BUFFER, tob->texCoords.size * tob->texCoords.data_size, tob->texCoords.data, GL_DYNAMIC_DRAW);
     } else {
-        printf("sub buffer data\n");
         glBindBuffer(GL_ARRAY_BUFFER, tob->bufferData.vertexBuffer);
         glBufferSubData(GL_ARRAY_BUFFER, sizeof(float) * charOff * 3 * 4, sizeof(newVerticies), newVerticies);
         glBindBuffer(GL_ARRAY_BUFFER, tob->bufferData.tcoordBuffer);
@@ -877,10 +1049,10 @@ void GlhTextObjectUpdateMesh(struct GlhTextObject *tob, char* OldString) {
     struct GlhBoundingBox boundingBox = GlhTextObjectGetBoundingBox(tob, 0.2);
 
     float backgroundVerts[] = {
-        boundingBox.start[0], boundingBox.start[1], boundingBox.start[2],
-        boundingBox.end[0]  , boundingBox.start[1], boundingBox.start[2],
-        boundingBox.start[0], boundingBox.end[1]  , boundingBox.end[2]  , 
-        boundingBox.end[0]  , boundingBox.end[1]  , boundingBox.end[2]  , 
+        boundingBox.start[0], boundingBox.start[1], 0,
+        boundingBox.end[0]  , boundingBox.start[1], 0,
+        boundingBox.start[0], boundingBox.end[1]  , 0,
+        boundingBox.end[0]  , boundingBox.end[1]  , 0
     };
     float backgroundColors[] = {
         tob->backgroundColor[0], tob->backgroundColor[1], tob->backgroundColor[2], tob->backgroundColor[3],
@@ -915,10 +1087,11 @@ char* GlhTextObjectGetText(struct GlhTextObject *tob) {
 }
 
 // transforms can be NULL
-void GlhInitTextObject(struct GlhTextObject *tob, char* string, struct GlhFont *font, struct GlhProgram *prg, vec4 color, vec4 backgroundColor, struct GlhTransforms *tsf) {
+void GlhInitTextObject(struct GlhTextObject *tob, char* string, struct GlhFont *font, vec4 color, vec4 backgroundColor, struct GlhTransforms *tsf) {
     tob->type = text;
     tob->font = font;
-    tob->program = prg;
+    tob->glyphProgram = &GlobalShaders.glyphs;
+    tob->textProgram = &GlobalShaders.text;
     if(tsf != NULL) {
         tob->transforms = *tsf;
     } else {
@@ -949,13 +1122,11 @@ void GlhInitTextObject(struct GlhTextObject *tob, char* string, struct GlhFont *
 
     glGenVertexArrays(1, &tob->backgroundQuadBufferData.VAO);
     glGenBuffers(1, &tob->backgroundQuadBufferData.vertexBuffer);
-    glGenBuffers(1, &tob->backgroundQuadBufferData.tcoordBuffer);
     glGenBuffers(1, &tob->backgroundQuadBufferData.normalBuffer);
     glGenBuffers(1, &tob->backgroundQuadBufferData.indexsBuffer);
     glGenBuffers(1, &tob->backgroundQuadBufferData.colorsBuffer);
     set_opengl_label(GL_VERTEX_ARRAY, tob->backgroundQuadBufferData.VAO, "VAO_TEXT_BACKGROUND");
     set_opengl_label(GL_BUFFER, tob->backgroundQuadBufferData.vertexBuffer, "BUFFER_TEXT_BACKGROUND_VERTEX");
-    set_opengl_label(GL_BUFFER, tob->backgroundQuadBufferData.tcoordBuffer, "BUFFER_TEXT_BACKGROUND_TEXCOORDS");
     set_opengl_label(GL_BUFFER, tob->backgroundQuadBufferData.normalBuffer, "BUFFER_TEXT_BACKGROUND_NORMALS");
     set_opengl_label(GL_BUFFER, tob->backgroundQuadBufferData.indexsBuffer, "BUFFER_TEXT_BACKGROUND_INDICES");
     set_opengl_label(GL_BUFFER, tob->backgroundQuadBufferData.colorsBuffer, "BUFFER_TEXT_BACKGROUND_COLORS");
@@ -963,17 +1134,6 @@ void GlhInitTextObject(struct GlhTextObject *tob, char* string, struct GlhFont *
     // set background buffer
     float tmpVerts[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
     float tmpColors[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-    float texCoords[8];
-    float invsl = 1.0 / font->textureSideLength;
-    struct GlhFontGLyphData cdata;
-    char k[9]; // 9 -> 8 bytes for the unsigned long, + 1 for the nul termination
-    *(unsigned long*)k = (unsigned long) -2; // cast the char* to an unsined long pointer, to just set it like that
-    k[8] = '\0'; // null terminate
-    map_get(&font->glyphsData, k, &cdata);
-    texCoords[0] = ((float)cdata.x0) * invsl; texCoords[1] = ((float)cdata.y0) * invsl;
-    texCoords[2] = ((float)cdata.x1) * invsl; texCoords[3] = ((float)cdata.y0) * invsl;
-    texCoords[4] = ((float)cdata.x0) * invsl; texCoords[5] = ((float)cdata.y1) * invsl;
-    texCoords[6] = ((float)cdata.x1) * invsl; texCoords[7] = ((float)cdata.y1) * invsl;
 
     float normals[12] = {0, 0, -1.0, 0, 0, -1.0, 0, 0, -1.0, 0, 0, -1.0};
     int indexes[6] = {0, 1, 2, 1, 3, 2};
@@ -981,8 +1141,6 @@ void GlhInitTextObject(struct GlhTextObject *tob, char* string, struct GlhFont *
     glBindVertexArray(tob->backgroundQuadBufferData.VAO);
     glBindBuffer(GL_ARRAY_BUFFER, tob->backgroundQuadBufferData.vertexBuffer);
     glBufferData(GL_ARRAY_BUFFER, sizeof(tmpVerts), tmpVerts, GL_DYNAMIC_DRAW);
-    glBindBuffer(GL_ARRAY_BUFFER, tob->backgroundQuadBufferData.tcoordBuffer);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(texCoords), texCoords, GL_STATIC_DRAW);
     glBindBuffer(GL_ARRAY_BUFFER, tob->backgroundQuadBufferData.normalBuffer);
     glBufferData(GL_ARRAY_BUFFER, sizeof(normals), normals, GL_STATIC_DRAW);
     glBindBuffer(GL_ARRAY_BUFFER, tob->backgroundQuadBufferData.colorsBuffer);
@@ -992,9 +1150,8 @@ void GlhInitTextObject(struct GlhTextObject *tob, char* string, struct GlhFont *
 
     // bind attributes to VAO
     setAttribute(tob->backgroundQuadBufferData.vertexBuffer, 0, 3);
-    setAttribute(tob->backgroundQuadBufferData.tcoordBuffer, 1, 2);
-    setAttribute(tob->backgroundQuadBufferData.normalBuffer, 2, 3);
-    setAttribute(tob->backgroundQuadBufferData.colorsBuffer, 3, 4);
+    setAttribute(tob->backgroundQuadBufferData.normalBuffer, 1, 3);
+    setAttribute(tob->backgroundQuadBufferData.colorsBuffer, 2, 4);
 
     tob->backgroundQuadBufferData.vertexCount = 6;
 
@@ -1002,8 +1159,8 @@ void GlhInitTextObject(struct GlhTextObject *tob, char* string, struct GlhFont *
 }
 
 void GlhFreeTextObject(struct GlhTextObject *tob) {
-    vector_free(&tob->verticies);
-    vector_free(&tob->texCoords);
+    vector_free(tob->verticies);
+    vector_free(tob->texCoords);
     free(tob->_text);
 }
 
@@ -1028,8 +1185,8 @@ void GlhRunComputeShader(struct GlhComputeShader *cs, GLuint inputTexture, GLuin
 int loadTexture(GLuint *texture, char* filename, bool alpha) {
     // create, bind texture and set parameters
     glGenTextures(1, texture);
-    set_opengl_label(GL_TEXTURE, *texture, "TEXTURE");
     glBindTexture(GL_TEXTURE_2D, *texture);
+    set_opengl_label(GL_TEXTURE, *texture, "TEXTURE");
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -1057,8 +1214,8 @@ int loadTexture(GLuint *texture, char* filename, bool alpha) {
 
 void createSingleColorTexture(GLuint *texture, float r, float g, float b) {
     glGenTextures(1, texture);
-    set_opengl_label(GL_TEXTURE, *texture, "TEXTURE_SINGLE_COLOR");
     glBindTexture(GL_TEXTURE_2D, *texture);
+    set_opengl_label(GL_TEXTURE, *texture, "TEXTURE_SINGLE_COLOR");
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -1087,8 +1244,8 @@ void saveImage(char* filepath, GLFWwindow* w) {
 }
 void createEmptySizedTexture(GLuint *texture, int width, int height, GLenum sizedFormat, GLenum format, GLenum type) {
     glGenTextures(1, texture);
-    set_opengl_label(GL_TEXTURE, *texture, "TEXTURE_BLANK");
     glBindTexture(GL_TEXTURE_2D, *texture);
+    set_opengl_label(GL_TEXTURE, *texture, "TEXTURE_BLANK");
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);

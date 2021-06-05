@@ -78,18 +78,22 @@ void vector_splice(struct Vector *vec, int start, int length) {
     memmove(vec->data + start * vec->data_size, vec->data + (start + _length) * vec->data_size, ((vec->size -= _length) - start) * vec->data_size);
 }
 
-void vector_print_as_int(struct Vector *vec) {
+void* vector_get_pointer_to(struct Vector vec, int index) {
+    return vec.data + index * vec.data_size;
+}
+
+void vector_print_as_int(struct Vector vec) {
     printf("[");
-    for(int i = 0; i < vec->size; i++) {
+    for(int i = 0; i < vec.size; i++) {
         if(i == 0) { // then no ned for the coma
-            printf("%i", vector_get(vec->data, i, int));
+            printf("%i", vector_get(vec.data, i, int));
         } else{
-            printf(", %i", vector_get(vec->data, i, int));
+            printf(", %i", vector_get(vec.data, i, int));
         }
     }
     printf("]");
 }
 
-void vector_free(struct Vector *vec) {
-    free(vec->data);
+void vector_free(struct Vector vec) {
+    free(vec.data);
 }

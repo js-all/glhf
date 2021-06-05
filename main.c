@@ -14,15 +14,10 @@
 #include "glhelper.h"
 
 struct GlhContext ctx;
+int width = 640;
+int height = 480;
 
 void setUniforms(struct GlhObject *obj, struct GlhContext *ctx) {
-    mat4 mvp, mv;
-    glm_mat4_mul(ctx->cachedViewMatrix, obj->cachedModelMatrix, mv);
-    glm_mat4_mul(ctx->cachedProjectionMatrix, mv, mvp);
-    glUniformMatrix4fv(vector_get(obj->program->uniformsLocation.data, 0, GLint), 1, GL_FALSE,(float*) mvp);
-}
-
-void setTextUniforms(struct GlhTextObject *obj, struct GlhContext *ctx) {
     mat4 mvp, mv;
     glm_mat4_mul(ctx->cachedViewMatrix, obj->cachedModelMatrix, mv);
     glm_mat4_mul(ctx->cachedProjectionMatrix, mv, mvp);
@@ -44,12 +39,31 @@ void handleDebugMessage(GLenum source, GLenum type, GLuint id, GLenum severity, 
     else if(type & GL_DEBUG_TYPE_PORTABILITY) typ = "[PORTABILITY]";
     else if(type & GL_DEBUG_TYPE_PUSH_GROUP) typ = "[PSHGRP]";
     else if(type & GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR) typ = "[UNDEFINED_BEHAVIOUR]";
-    printf("\033[32m[GLDEBUG]\033[0m%s%s: %s\n", sev, typ, message);
+    printf("\033[32m[GLDEBUG]\033[0m%s%s: \033[34m%s\n\033[0m", sev, typ, message);
 }
 
-void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
+void framebuffer_size_callback(GLFWwindow* window, int wwidth, int wheight) {
+    width = wwidth;
+    height = wheight;
     glViewport(0, 0, width, height);
     GlhComputeContextProjectionMatrix(&ctx);
+}
+
+void mouse_pos_callback(GLFWwindow *window, double xpos, double ypos) {
+    double yaw = (xpos / width * 2 - 1) * (M_PI_2);
+    double pitch = (ypos / height * 2 - 1) * (M_PI_2);
+    double roll = 0;
+
+    double sensitivity = 1;
+
+    yaw *= sensitivity;
+    pitch *= sensitivity;
+    roll *= sensitivity;
+
+    ctx.camera.rotation[0] = pitch;
+    ctx.camera.rotation[1] = yaw;
+    ctx.camera.rotation[2] = roll;
+    GlhComputeContextViewMatrix(&ctx);
 }
 
 int main() {
@@ -59,7 +73,13 @@ int main() {
         return -1;
     }
     GlhInitContext(&ctx, 640, 480, "nothing here");
+
+    printf("\033[31mGL version: %s\n\033[0m", glGetString(GL_VERSION));
+    glEnable(GL_DEBUG_OUTPUT);
+    glDebugMessageCallback(handleDebugMessage, NULL);
+
     glfwSetFramebufferSizeCallback(ctx.window, framebuffer_size_callback);
+    glfwSetCursorPosCallback(ctx.window, mouse_pos_callback);
     GlhInitFreeType();
     struct GlhMesh mesh;
     // fill mesh
@@ -83,16 +103,8 @@ int main() {
         printf("\n");
     }
 
-    printf("GL version: %s\n", glGetString(GL_VERSION));
-    glEnable(GL_DEBUG_OUTPUT);
-    glDebugMessageCallback(handleDebugMessage, NULL);
-
     char* uniforms[] = {
         "MVP"
-    };
-    char* textUniforms[] = {
-        "MVP",
-        "uTexture"
     };
 
     struct GlhProgram prg;
@@ -101,9 +113,6 @@ int main() {
     struct GlhFont font;
     GlhInitFont(&font, "fonts/Roboto-Regular.ttf", 128, -1, 0.95);
 
-    struct GlhProgram tprg;
-    GlhInitProgram(&tprg, "shaders/text.frag", "shaders/text.vert", textUniforms, 2, setTextUniforms);
-
     struct GlhTransforms tsf = GlhGetIdentityTransform();
     tsf.translation[2] = -1;
     glm_vec3_scale(tsf.scale, 0.1, tsf.scale);
@@ -111,9 +120,10 @@ int main() {
     struct GlhTextObject to;
     vec4 color = {1.0, 1.0, 1.0, 1.0};
     vec4 backgoroundColor = {0.0, 0.0, 0.0, 0.8};
-    GlhInitTextObject(&to, "Letters be rendered\0", &font, &tprg, color, backgoroundColor, &tsf);
+    GlhInitTextObject(&to, "Letters be rendered\0", &font, color, backgoroundColor, &tsf);
     GlhUpdateTextObjectModelMatrix(&to);
 
+    // ctx.camera.perspective = false;
 
     GLuint tex;
     createSingleColorTexture(&tex, 1.0, 0.0, 0.0);
@@ -122,7 +132,7 @@ int main() {
     GlhInitObject(&plane, tex, GLM_VEC3_ONE, GLM_VEC3_ZERO, GLM_VEC3_ZERO, &mesh, &prg);
     glm_vec3_scale(plane.transforms.scale, 20, plane.transforms.scale);
     plane.transforms.scale[0] *= 16.0 / 9;
-    plane.transforms.translation[2] = -40;
+    plane.transforms.translation[2] = -30;
 
     GlhUpdateObjectModelMatrix(&plane);
     GlhContextAppendChild(&ctx, &plane);
@@ -132,10 +142,6 @@ int main() {
     GlhComputeContextViewMatrix(&ctx);
     glClearColor(1, 1, 1, 1);
     while(!(glfwWindowShouldClose(ctx.window))) {
-        int width, height;
-        glfwGetFramebufferSize(ctx.window, &width, &height);
-
-
         float ratio = (float) width / height;
         struct GlhBoundingBox box = GlhTextObjectGetBoundingBox(&to, 0.2);
         GlhApplyTransformsToBoundingBox(&box, to.transforms);
@@ -143,6 +149,9 @@ int main() {
 
         to.transforms.translation[0] = ratio - toWidth + 0.2 * to.transforms.scale[0];
         GlhUpdateTextObjectModelMatrix(&to);
+
+        double t = glfwGetTime();
+
 
         GlhRenderContext(&ctx);
         glfwSwapBuffers(ctx.window);

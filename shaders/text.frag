@@ -1,13 +1,14 @@
-#version 420
+#version 460
 
-in vec2 texCoord;
-in vec4 color;
+layout(location = 0) in vec4 pos;
+layout(location = 1) in vec4 color;
 
 out vec4 FragColor;
 
 uniform sampler2D uTexture;
 
 void main() {
-    float texv = texture(uTexture, texCoord).x;
-    FragColor = vec4(color.xyz, color.w * texv);
+    vec2 p = ((pos.xy / pos.w) + 1) / 2;
+    vec4 texv = texture(uTexture, p);
+    FragColor = texv * texv.w + color * (1-texv.w);
 }

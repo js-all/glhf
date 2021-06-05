@@ -33,5 +33,5 @@ void events_broadcast(struct EventBroadcaster *ev, char* eventName, void* arg) {
 }
 
 void events_free(struct EventBroadcaster *ev) {
-    vector_free(&ev->subscribers);
+    vector_free(ev->subscribers);
 }

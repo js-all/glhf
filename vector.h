@@ -33,7 +33,8 @@ void vector_pop(struct Vector *vec, void* data);
 void vector_shift(struct Vector *vec, void* data);
 // splice array from index start of length element (until the end if length is -1)
 void vector_splice(struct Vector *vec, int start, int length);
-void vector_free(struct Vector *vec);
+void vector_free(struct Vector vec);
 // print the array as if elements where integers without newlines
-void vector_print_as_int(struct Vector *vec);
+void vector_print_as_int(struct Vector vec);
+void* vector_get_pointer_to(struct Vector vec, int index);
 #endif

@@ -60,7 +60,8 @@ struct GlhObject {
 struct GlhTextObject {
     enum GlhObjectTypes type;
     struct GlhFont *font;
-    struct GlhProgram *program;
+    struct GlhProgram *glyphProgram;
+    struct GlhProgram *textProgram;
     struct GlhTransforms transforms;
     struct GlhMeshBufferData bufferData;
     struct GlhMeshBufferData backgroundQuadBufferData;
@@ -96,13 +97,21 @@ struct GlhBoundingBox {
     vec3 end;
 };
 
-//! as of now, applications should only have a single context, and would probably break otherwise
-struct GlhContext {
-    GLFWwindow *window;
-    struct GlhCamera camera;
-    mat4 cachedViewMatrix;
-    mat4 cachedProjectionMatrix;
-    Vector children;
+enum GlhFBOType {
+    FBSizedTexture
+};
+
+struct GlhFBO {
+    GLuint FBO;
+    GLuint attachments[2];
+    bool active;
+    enum GlhFBOType type;
+    unsigned long id;
+};
+
+struct GlhFBOProvider {
+    Vector FBOs;
+    struct GlhContext *ctx;
 };
 
 struct GlhProgram {
@@ -114,6 +123,21 @@ struct GlhProgram {
     // it is not directly implemented in the helper as no shaders are provided by default
     // and as such should be dealt with by the user
     void (*setGlobalUniforms)(void*, struct GlhContext*);
+};
+
+struct GlhGlobalShaders {
+    struct GlhProgram glyphs;
+    struct GlhProgram text;
+};
+
+//! as of now, applications should only have a single context, and would probably break otherwise
+struct GlhContext {
+    GLFWwindow *window;
+    struct GlhCamera camera;
+    mat4 cachedViewMatrix;
+    mat4 cachedProjectionMatrix;
+    Vector children;
+    struct GlhFBOProvider FBOProvider;
 };
 
 struct GlhComputeShader {
@@ -163,10 +187,12 @@ void GlhUpdateTextObjectModelMatrix(struct GlhTextObject *tob);
 void GlhTextObjectSetText(struct GlhTextObject *tob, char* string);
 char* GlhTextObjectGetText(struct GlhTextObject *tob);
 // transforms can be NULL
-void GlhInitTextObject(struct GlhTextObject *tob, char* string, struct GlhFont *font, struct GlhProgram *prg, vec4 color, vec4 backgroundColor, struct GlhTransforms *tsf);
+void GlhInitTextObject(struct GlhTextObject *tob, char* string, struct GlhFont *font, vec4 color, vec4 backgroundColor, struct GlhTransforms *tsf);
 void GlhRenderTextObject(struct GlhTextObject *tob, struct GlhContext *ctx);
 void GlhFreeTextObject(struct GlhTextObject *tob);
 struct GlhTransforms GlhGetIdentityTransform();
+struct GlhFBO GlhRequestFBO(struct GlhFBOProvider *provider, enum GlhFBOType type);
+void GlhReleaseFBO(struct GlhFBOProvider provider, struct GlhFBO fbo);
 void saveImage(char* filepath, GLFWwindow* w);
 void GlhInitComputeShader(struct GlhComputeShader *cs, char* filename);
 void GlhRunComputeShader(struct GlhComputeShader *cs, GLuint inputTexture, GLuint outputTexture, GLenum sizedInFormat, GLenum sizedOutFormat, int workGroupsWidth, int workGroupsHeight);
