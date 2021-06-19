@@ -43,8 +43,8 @@ void map_get(Map *map, char* key, void* data) {
 void map_delete(Map *map, char* key) {
     int i = getKeyIndex(map, key);
     if(i != -1) {
-        vector_splice(&map->keyVector, i, 1);
-        vector_splice(&map->valuesVector, i, 1);
+        vector_splice(&map->keyVector, i, 1, NULL);
+        vector_splice(&map->valuesVector, i, 1, NULL);
     } else {
         printf("WARN: trying to delete unset key in map (double delete ?)\n");
     }

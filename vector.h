@@ -1,8 +1,8 @@
+#ifndef _VECTOR_H
+#define _VECTOR_H
 #ifndef size_t
 #include <stdlib.h>
 #endif
-#ifndef _VECTOR_H
-#define _VECTOR_H
 // used to get elements from vector needs a define because vectors don't have types
 #define vector_get(vectordata, index, type) (((type*)vectordata)[index])
 #define vector_to_array(vector, array, type) \
@@ -31,8 +31,8 @@ void vector_insert_before(struct Vector *vec, void* data, int index);
 void vector_insert(struct Vector *vec, void* data);
 void vector_pop(struct Vector *vec, void* data);
 void vector_shift(struct Vector *vec, void* data);
-// splice array from index start of length element (until the end if length is -1)
-void vector_splice(struct Vector *vec, int start, int length);
+// splice array from index start of length element (until the end if length is -1) and put spliced part in data
+void vector_splice(struct Vector *vec, int start, int length, void* data);
 void vector_free(struct Vector vec);
 // print the array as if elements where integers without newlines
 void vector_print_as_int(struct Vector vec);

@@ -72,9 +72,10 @@ void vector_shift(struct Vector *vec, void* data) {
         memmove(vec->data, vec->data + vec->data_size, vec->size * vec->data_size);
 }
 
-void vector_splice(struct Vector *vec, int start, int length) {
+void vector_splice(struct Vector *vec, int start, int length, void* data) {
     int _length = length >= 0 ? length : vec->size - start;
     if(_length <= 0) return;
+    if(data != NULL) memcpy(data, vec->data + start * vec->data_size, _length * vec->data_size);
     memmove(vec->data + start * vec->data_size, vec->data + (start + _length) * vec->data_size, ((vec->size -= _length) - start) * vec->data_size);
 }
 

@@ -1,3 +1,4 @@
+#include <freetype2/freetype/fttypes.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -24,7 +25,7 @@ static const int CharMarginSize = 2;
 
 static char fontGlyphDataMapDefaultKey[9] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, '\0'};
 
-struct GlhGlobalShaders GlobalShaders;
+GlhGlobalShaders GlobalShaders;
 
 bool globalShadersReady;
 
@@ -60,7 +61,6 @@ void set_opengl_label(GLenum identifier, GLuint name, char* label) {
     int labelLength = suffixlesLabelLength + 1 + 5 + 1;
     char newLabel[labelLength];
     sprintf(newLabel, "%s_%05u", label, OpenGLObjectLabelID++);
-    printf("setting label %s (for %u)\n", newLabel, name);
     glObjectLabel(identifier, name, labelLength, newLabel);
 }
 
@@ -119,7 +119,7 @@ int initProgram(char* fragSourceFilename, char* vertSourceFilename, GLuint *prog
     return 0;
 }
 
-void GlhTransformsToMat4(struct GlhTransforms *tsf, mat4 *mat) {
+void GlhTransformsToMat4(GlhTransforms *tsf, mat4 *mat) {
     glm_mat4_identity(*mat);
     vec3 reverseTransformOrigin;
     glm_vec3_negate_to(tsf->transformsOrigin, reverseTransformOrigin);
@@ -133,15 +133,15 @@ void GlhTransformsToMat4(struct GlhTransforms *tsf, mat4 *mat) {
     glm_translate(*mat, reverseTransformOrigin);
 }
 
-struct GlhTransforms GlhGetIdentityTransform() {
-    struct GlhTransforms tsf = {};
+GlhTransforms GlhGetIdentityTransform() {
+    GlhTransforms tsf = {};
     tsf.scale[0] = 1;
     tsf.scale[1] = 1;
     tsf.scale[2] = 1;
     return tsf;
 }
 
-void GlhInitProgram(struct GlhProgram *prg, char* fragSourceFilename, char* vertSourceFilename, char* uniforms[], int uniformsCount, void (*setUniforms)()) {
+void GlhInitProgram(GlhProgram *prg, char* fragSourceFilename, char* vertSourceFilename, char* uniforms[], int uniformsCount, void (*setUniforms)()) {
     int attributesCount = sizeof(attributes) / sizeof(attributes[0]);
     // init shader program
     prg->shaderProgram = glCreateProgram();
@@ -172,14 +172,14 @@ void GlhInitProgram(struct GlhProgram *prg, char* fragSourceFilename, char* vert
     prg->setGlobalUniforms = setUniforms;
 }
 
-void __GS_glyphs_uniform(struct GlhTextObject *obj, struct GlhContext *ctx) {
+void __GS_glyphs_uniform(GlhTextObject *obj, GlhContext *ctx) {
     mat4 mvp, mv;
     glm_mat4_mul(ctx->cachedViewMatrix, obj->cachedModelMatrix, mv);
     glm_mat4_mul(ctx->cachedProjectionMatrix, mv, mvp);
     glUniformMatrix4fv(vector_get(obj->glyphProgram->uniformsLocation.data, 0, GLint), 1, GL_FALSE,(float*) mvp);
 }
 
-void __GS_text_uniform(struct GlhTextObject *obj, struct GlhContext *ctx) {
+void __GS_text_uniform(GlhTextObject *obj, GlhContext *ctx) {
     mat4 mvp, mv;
     glm_mat4_mul(ctx->cachedViewMatrix, obj->cachedModelMatrix, mv);
     glm_mat4_mul(ctx->cachedProjectionMatrix, mv, mvp);
@@ -202,9 +202,9 @@ void _makeGlobalShaderReady() {
     GlhInitProgram(&GlobalShaders.text, "shaders/text.frag", "shaders/text.vert", text_uniforms, 2, __GS_text_uniform);
 }
 
-void GlhDeleteFBO(struct GlhFBOProvider *provider, struct GlhFBO fbo) {
+void GlhDeleteFBO(GlhFBOProvider *provider, GlhFBO fbo) {
     // getting a pointer because fbo could be a copy and outdated
-    struct GlhFBO *pfbo = vector_get_pointer_to(provider->FBOs, fbo.id);
+    GlhFBO *pfbo = vector_get_pointer_to(provider->FBOs, fbo.id);
 
     if(pfbo->active) {
         printf("WARN: deleting active FBO\n");
@@ -220,10 +220,10 @@ void GlhDeleteFBO(struct GlhFBOProvider *provider, struct GlhFBO fbo) {
         break;
     }
 
-    vector_splice(&provider->FBOs, fbo.id, 1);
+    vector_splice(&provider->FBOs, fbo.id, 1, NULL);
 }
 
-bool GlhVerrifieFBO(struct GlhFBOProvider *provider, struct GlhFBO fbo) {
+bool GlhVerrifieFBO(GlhFBOProvider *provider, GlhFBO fbo) {
     bool valid = true;
 
     switch (fbo.type) {
@@ -257,10 +257,10 @@ bool GlhVerrifieFBO(struct GlhFBOProvider *provider, struct GlhFBO fbo) {
     return valid;
 }
 
-struct GlhFBO GlhRequestFBO(struct GlhFBOProvider *provider, enum GlhFBOType type) {
+GlhFBO GlhRequestFBO(GlhFBOProvider *provider, GlhFBOType type) {
     int found = -1;
     for(int i = 0; i < provider->FBOs.size; i++) {
-        struct GlhFBO fbo = vector_get(provider->FBOs.data, i, struct GlhFBO);
+        GlhFBO fbo = vector_get(provider->FBOs.data, i, GlhFBO);
         bool valid = GlhVerrifieFBO(provider, fbo);
 
         if(!valid) {
@@ -276,7 +276,7 @@ struct GlhFBO GlhRequestFBO(struct GlhFBOProvider *provider, enum GlhFBOType typ
         }
     }
     if(found != -1) {
-        struct GlhFBO *fbo = vector_get_pointer_to(provider->FBOs, found);        
+        GlhFBO *fbo = vector_get_pointer_to(provider->FBOs, found);        
 
         fbo->active = true;
 
@@ -296,7 +296,7 @@ struct GlhFBO GlhRequestFBO(struct GlhFBOProvider *provider, enum GlhFBOType typ
 
         return *fbo;
     }
-    struct GlhFBO fbo;
+    GlhFBO fbo;
     fbo.active = true;
     fbo.type = type;
     fbo.id = provider->FBOs.size;
@@ -342,19 +342,19 @@ struct GlhFBO GlhRequestFBO(struct GlhFBOProvider *provider, enum GlhFBOType typ
     return fbo;
 }
 
-void GlhReleaseFBO(struct GlhFBOProvider provider, struct GlhFBO fbo) {
-    struct GlhFBO *pfbo = vector_get_pointer_to(provider.FBOs, fbo.id);
+void GlhReleaseFBO(GlhFBOProvider provider, GlhFBO fbo) {
+    GlhFBO *pfbo = vector_get_pointer_to(provider.FBOs, fbo.id);
     pfbo->active = false;
 }
 
-void GlhFreeProgram(struct GlhProgram *prg) {
+void GlhFreeProgram(GlhProgram *prg) {
     // free allocated vectors
     vector_free(prg->attributes);
     vector_free(prg->uniforms);
     vector_free(prg->uniformsLocation);
 }
 
-void GlhInitContext(struct GlhContext *ctx, int windowWidth, int windowHeight, char* windowTitle) {
+void GlhInitContext(GlhContext *ctx, int windowWidth, int windowHeight, char* windowTitle) {
     #define OPT(a, b, c) (a == c ? b : a)
     // set versions
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
@@ -375,7 +375,7 @@ void GlhInitContext(struct GlhContext *ctx, int windowWidth, int windowHeight, c
     ctx->camera.perspective = true;
     // init children vector
     vector_init(&ctx->children, 2, sizeof(void*));
-    vector_init(&ctx->FBOProvider.FBOs, 2, sizeof(struct GlhFBO));
+    vector_init(&ctx->FBOProvider.FBOs, 2, sizeof(GlhFBO));
     ctx->FBOProvider.ctx = ctx;
     // get window width and height
     int width, height;
@@ -395,16 +395,16 @@ void GlhInitContext(struct GlhContext *ctx, int windowWidth, int windowHeight, c
     _makeGlobalShaderReady();
 }
 
-void GlhFreeContext(struct GlhContext *ctx) {
+void GlhFreeContext(GlhContext *ctx) {
     vector_free(ctx->children);
     vector_free(ctx->FBOProvider.FBOs);
 }
 
-void GlhContextAppendChild(struct GlhContext *ctx, void *child) {
+void GlhContextAppendChild(GlhContext *ctx, GlhElement *child) {
     vector_push(&ctx->children, &child);
 }
 
-void GlhComputeContextViewMatrix(struct GlhContext *ctx) {
+void GlhComputeContextViewMatrix(GlhContext *ctx) {
     vec3 translation;
     vec3 rotation;
     // negate the transforms to give the illusion of a moving camera
@@ -418,44 +418,25 @@ void GlhComputeContextViewMatrix(struct GlhContext *ctx) {
     glm_translate(ctx->cachedViewMatrix, translation);
 }
 
-void GlhComputeContextProjectionMatrix(struct GlhContext *ctx) { 
-    //TODO add this computation as well to a resize hook
+void GlhComputeContextProjectionMatrix(GlhContext *ctx) { 
     // get window width and height to compute the aspect
-    #define zn ctx->camera.zNear
-    #define zf ctx->camera.zFar
     int width, height;
     glfwGetFramebufferSize(ctx->window, &width, &height);
     float aspect = (float) width / (float) height;
-    float f = tanf(M_PI_2 - 0.5*ctx->camera.fov);
-    mat4 p = {
-        {f / aspect, 0, 0, 0},
-        {     0,     f, 0, 0},
-        {     0,     0, 0, 0},
-        {     0,     0, 0, 0}
-    };
-    // compute projection matrix
+    mat4 p;
     if(ctx->camera.perspective) {
-        //* yes, i know cglm already include a perspective function, but it seems to be broken while that works
-        float fn = 1.0f / (zn - zf);
-        p[2][2] = (zn + zf) * fn;
-        p[2][3] = -1;
-        p[3][2] = zn * zf * fn * 2; 
-        p[3][3] = 0;                       
+        glm_perspective(ctx->camera.fov, aspect, ctx->camera.zNear, ctx->camera.zFar, p);
     } else {
-        float fn = 1.0 / (zf - zn);
-        p[2][2] = 2 * fn;
-        p[2][3] = 0;
-        p[3][2] = 2 * zn * fn + 1;
-        p[3][3] = 1;
+        float f = tanf(M_PI_2 - 0.5 * ctx->camera.fov) * aspect;
+        glm_ortho(-f, f, -1, 1, ctx->camera.zNear, ctx->camera.zFar, p);
     }
+
     // dirty way of setting cachedProjectionMatrix to p
     glm_mat4_identity(ctx->cachedProjectionMatrix);
     glm_mat4_mul(ctx->cachedProjectionMatrix, p, ctx->cachedProjectionMatrix);
-    #undef zn
-    #undef zf
 }
 
-void GlhRenderObject(struct GlhObject *obj, struct GlhContext *ctx) {
+void GlhRenderObject(GlhObject *obj, GlhContext *ctx) {
     // use objext's shader program
     glUseProgram(obj->program->shaderProgram);
     // set the uniforms related to the program
@@ -468,9 +449,9 @@ void GlhRenderObject(struct GlhObject *obj, struct GlhContext *ctx) {
     glDrawElements(GL_TRIANGLES, obj->mesh->bufferData.vertexCount, GL_UNSIGNED_INT, NULL);
 }
 
-void GlhRenderTextObject(struct GlhTextObject *tob, struct GlhContext *ctx) {
+void GlhRenderTextObject(GlhTextObject *tob, GlhContext *ctx) {
     // get FBO to render the text to
-    struct GlhFBO fbo = GlhRequestFBO(&ctx->FBOProvider, FBSizedTexture);
+    GlhFBO fbo = GlhRequestFBO(&ctx->FBOProvider, FBSizedTexture);
 
     glBindFramebuffer(GL_FRAMEBUFFER, fbo.FBO);
 
@@ -499,21 +480,25 @@ void GlhRenderTextObject(struct GlhTextObject *tob, struct GlhContext *ctx) {
     GlhReleaseFBO(ctx->FBOProvider, fbo);
 }
 
-void GlhRenderContext(struct GlhContext *ctx) {
+void GlhRenderElement(GlhElement *el, GlhContext *ctx) {
+    GlhObjectTypes type = el->any.type;
+    switch (type) {
+        case regular: 
+            GlhRenderObject(&el->regular, ctx);
+            break;
+        case text:
+            GlhRenderTextObject(&el->text, ctx);
+            break;
+    }
+}
+
+void GlhRenderContext(GlhContext *ctx) {
     // clear screen and depth buffer (for depth testing)
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     for(int i = 0; i < ctx->children.size; i++) {
-        // get each object and draw it
-        void* objPtr = vector_get(ctx->children.data, i, void*);
-        // i can do that because the pointer to a struct is also a pointer to its first member
-        enum GlhObjectTypes type = *(enum GlhObjectTypes*) objPtr;
-        if(type == regular) {
-            struct GlhObject* obj = (struct GlhObject*) objPtr;
-            GlhRenderObject(obj, ctx);
-        } else if(type == text) {
-            struct GlhTextObject* tob = (struct GlhTextObject*) objPtr;
-            GlhRenderTextObject(tob, ctx);
-        }
+        GlhElement* el = vector_get(ctx->children.data, i, void*);
+        
+        GlhRenderElement(el, ctx);
     }
 }
 
@@ -524,8 +509,8 @@ void setAttribute(GLuint buffer, GLuint location, int comp) {
     glEnableVertexAttribArray(location);
 }
 
-void GlhInitMesh(struct GlhMesh *mesh, vec3 verticies[], int verticiesCount, vec3 normals[], vec3 indices[], int indicesCount, vec2 texcoords[], int texcoordsCount) {
-    struct GlhMeshBufferData data = {};
+void GlhInitMesh(GlhMesh *mesh, vec3 verticies[], int verticiesCount, vec3 normals[], vec3 indices[], int indicesCount, vec2 texcoords[], int texcoordsCount) {
+    GlhMeshBufferData data = {};
     // zeroify bufferData
     mesh->bufferData = data;
     // initialize and set the vectors
@@ -551,16 +536,16 @@ void GlhInitMesh(struct GlhMesh *mesh, vec3 verticies[], int verticiesCount, vec
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh->bufferData.indexsBuffer);
 }
 
-void GlhFreeMesh(struct GlhMesh *mesh) {
+void GlhFreeMesh(GlhMesh *mesh) {
     vector_free(mesh->verticies);
     vector_free(mesh->normals);
     vector_free(mesh->indexes);
     vector_free(mesh->texCoords);
 }
 
-void GlhInitObject(struct GlhObject *obj, GLuint texture, vec3 scale, vec3 rotation, vec3 translation, struct GlhMesh *mesh, struct GlhProgram *program) {
+void GlhInitObject(GlhObject *obj, GLuint texture, vec3 scale, vec3 rotation, vec3 translation, GlhMesh *mesh, GlhProgram *program) {
     // store transforms into GlhTransforms struct
-    struct GlhTransforms tsfm = {};
+    GlhTransforms tsfm = {};
     glm_vec3_copy(scale, tsfm.scale);
     glm_vec3_copy(rotation, tsfm.rotation);
     glm_vec3_copy(translation, tsfm.translation);
@@ -573,7 +558,7 @@ void GlhInitObject(struct GlhObject *obj, GLuint texture, vec3 scale, vec3 rotat
     obj->texture = texture;
 }
 
-void GlhUpdateObjectModelMatrix(struct GlhObject *obj) {
+void GlhUpdateObjectModelMatrix(GlhObject *obj) {
     GlhTransformsToMat4(&obj->transforms, &obj->cachedModelMatrix);
 }
 //internal, used to avoid repeating code
@@ -600,7 +585,7 @@ void initArrayBuffer(GLuint *buffer, int components, Vector *vec, char* label) {
     glBufferData(GL_ARRAY_BUFFER, vec->size * components * sizeof(float), array, GL_STATIC_DRAW);
 }
 
-void GlhGenerateMeshBuffers(struct GlhMesh *mesh) {
+void GlhGenerateMeshBuffers(GlhMesh *mesh) {
     // prepare data and create, bind and fills buffer with it
     initArrayBuffer(&mesh->bufferData.vertexBuffer, 3, &mesh->verticies, "BUFFER_VERTICIES");
     initArrayBuffer(&mesh->bufferData.normalBuffer, 3, &mesh->normals, "BUFFER_NORMALS");
@@ -625,7 +610,7 @@ void GlhGenerateMeshBuffers(struct GlhMesh *mesh) {
 // empty right now because no manually allocated data is directly linked with objects
 // i still recomend calling it when and objects is not needed for later (multiple
 // textures stored in vectors maybe)
-void GlhFreeObject(struct GlhObject *obj) {}
+void GlhFreeObject(GlhObject *obj) {}
 
 void GlhInitFreeType() {
     if(FT_Init_FreeType(&ft)) {
@@ -637,7 +622,7 @@ void GlhFreeFreeType() {
     FT_Done_FreeType(ft);
 }
  
-void GlhFreeFont(struct GlhFont *font) {
+void GlhFreeFont(GlhFont *font) {
     for(int i = 0; i < font->glyphsData.keyVector.size; i++) {
         free(vector_get(font->glyphsData.keyVector.data, i, char*));
     }
@@ -645,9 +630,9 @@ void GlhFreeFont(struct GlhFont *font) {
     glDeleteTextures(1, &font->texture);
 }
 
-void GlhInitFont(struct GlhFont *font, char* ttfFileName, int size, int glyphCount, float packingPrecision) {
+void GlhInitFont(GlhFont *font, char* ttfFileName, int size, int glyphCount, float packingPrecision) {
     // init the final map which will store all the existing glyph data, plus a single default char
-    map_init(&font->glyphsData, sizeof(struct GlhFontGLyphData));
+    map_init(&font->glyphsData, sizeof(GlhFontGLyphData));
     // load the font and set char size
     FT_Face face;
     if(FT_New_Face(ft, ttfFileName, 0, &face)) {
@@ -817,7 +802,7 @@ void GlhInitFont(struct GlhFont *font, char* ttfFileName, int size, int glyphCou
     char* pixels = (char*)calloc(sideLength * sideLength, 1);
     for(int i = 0; i < _glyphCount + 2; i++) {
         // put the char info in the map
-        struct GlhFontGLyphData info = {};
+        GlhFontGLyphData info = {};
         float invSize = 1.0 / size;
         info.x0 = packs[i*2+0] + CharMarginSize;
         info.y0 = sideLength - 1 - (packs[i*2+1] + CharMarginSize) - prePackingGlyphsData[i].h; // all those sidelength - 1 - something is to convert
@@ -877,7 +862,7 @@ void GlhInitFont(struct GlhFont *font, char* ttfFileName, int size, int glyphCou
 	free(pixels);
 }
 
-void _characterToGlyphData(char c, struct GlhFont *font, struct GlhFontGLyphData *cdata) {
+void _characterToGlyphData(char c, GlhFont *font, GlhFontGLyphData *cdata) {
     // converting the char to a correctly formated font char info map key
     // looks complicated but really just is:
     // make char array, store the un altered unsigned long char code data inside
@@ -893,19 +878,19 @@ void _characterToGlyphData(char c, struct GlhFont *font, struct GlhFontGLyphData
     }
 }
 
-float GlhFontGetTextWidth(struct GlhFont *font, char* text) {
+float GlhFontGetTextWidth(GlhFont *font, char* text) {
     int len = strlen(text);
     float width = 0;
     for(int i = 0; i < len; i++) {
-        struct GlhFontGLyphData cdata;
+        GlhFontGLyphData cdata;
         _characterToGlyphData(text[i], font, &cdata);
         width += cdata.advance;
     }
     return width;
 }
 
-void _characterToMesh(char c, struct GlhFont *font, float *xoff, float yoff, float *newVerticies, float *newTexCoords, int arrOffset) {
-    struct GlhFontGLyphData cdata;
+void _characterToMesh(char c, GlhFont *font, float *xoff, float yoff, float *newVerticies, float *newTexCoords, int arrOffset) {
+    GlhFontGLyphData cdata;
     _characterToGlyphData(c, font, &cdata);
     // to convert from 0 -> textureSideLength texCoords to 0 -> 1
     float invsl = 1.0 / font->textureSideLength;
@@ -925,14 +910,14 @@ void _characterToMesh(char c, struct GlhFont *font, float *xoff, float yoff, flo
     *xoff += cdata.advance;
 }
 
-void GlhApplyTransformsToBoundingBox(struct GlhBoundingBox *box, struct GlhTransforms transforms) {
+void GlhApplyTransformsToBoundingBox(GlhBoundingBox *box, GlhTransforms transforms) {
     mat4 mat;
     GlhTransformsToMat4(&transforms, &mat);
     glm_mat4_mulv3(mat, box->start, 1.0, box->start);
     glm_mat4_mulv3(mat, box->end, 1.0, box->end);
 }
 
-struct GlhBoundingBox GlhTextObjectGetBoundingBox(struct GlhTextObject *tob, float margin) {
+GlhBoundingBox GlhTextObjectGetBoundingBox(GlhTextObject *tob, float margin) {
     vec3 min = {(float)INT_MAX, (float)INT_MAX, (float)INT_MAX};
     vec3 max = {INT_MIN, INT_MIN, INT_MIN};
     for(int i = 0; i < tob->verticies.size; i+=3) {
@@ -953,7 +938,7 @@ struct GlhBoundingBox GlhTextObjectGetBoundingBox(struct GlhTextObject *tob, flo
     min[0] -= margin; min[1] -= margin;
     max[0] += margin; max[1] += margin;
 
-    struct GlhBoundingBox bndbx;
+    GlhBoundingBox bndbx;
     
     glm_vec3_copy(min, bndbx.start);
     glm_vec3_copy(max, bndbx.end);
@@ -961,7 +946,7 @@ struct GlhBoundingBox GlhTextObjectGetBoundingBox(struct GlhTextObject *tob, flo
     return bndbx;
 }
 
-void GlhTextObjectUpdateMesh(struct GlhTextObject *tob, char* OldString) {
+void GlhTextObjectUpdateMesh(GlhTextObject *tob, char* OldString) {
     // until which char can we just keep everything the same
     int charOff = 0;
     int oldLength = OldString == NULL ? 0 : strlen(OldString);
@@ -976,8 +961,8 @@ void GlhTextObjectUpdateMesh(struct GlhTextObject *tob, char* OldString) {
     }
     changedLength = newLength - charOff;
     // remove the changed glyphs' verticies and texcoords
-    vector_splice(&tob->verticies, charOff * 3 * 4, -1);
-    vector_splice(&tob->texCoords, charOff * 2 * 4, -1);
+    vector_splice(&tob->verticies, charOff * 3 * 4, -1, NULL);
+    vector_splice(&tob->texCoords, charOff * 2 * 4, -1, NULL);
     // recompute the new ones
     float newVerticies[changedLength * 3 * 4];
     float newTexCoords[changedLength * 2 * 4];
@@ -986,7 +971,7 @@ void GlhTextObjectUpdateMesh(struct GlhTextObject *tob, char* OldString) {
     // if we reuse data
     if (tob->verticies.size > 0 && charOff > 0) {
         // get the advance of the last reused glyph
-        struct GlhFontGLyphData cd;
+        GlhFontGLyphData cd;
         _characterToGlyphData(tob->_text[charOff-1], tob->font, &cd);
         // and add it to its x pos into the xoffset
         xoff = vector_get(tob->verticies.data, tob->verticies.size - 6, float) + cd.advance;
@@ -1046,7 +1031,7 @@ void GlhTextObjectUpdateMesh(struct GlhTextObject *tob, char* OldString) {
     tob->transforms.transformsOrigin[0] = max_x * 0.5;
     tob->transforms.transformsOrigin[1] = max_y * 0.5;
 
-    struct GlhBoundingBox boundingBox = GlhTextObjectGetBoundingBox(tob, 0.2);
+    GlhBoundingBox boundingBox = GlhTextObjectGetBoundingBox(tob, 0.2);
 
     float backgroundVerts[] = {
         boundingBox.start[0], boundingBox.start[1], 0,
@@ -1067,11 +1052,11 @@ void GlhTextObjectUpdateMesh(struct GlhTextObject *tob, char* OldString) {
     glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(backgroundColors), backgroundColors);
 }
 
-void GlhUpdateTextObjectModelMatrix(struct GlhTextObject *tob) {
+void GlhUpdateTextObjectModelMatrix(GlhTextObject *tob) {
     GlhTransformsToMat4(&tob->transforms, &tob->cachedModelMatrix);
 }
 
-void GlhTextObjectSetText(struct GlhTextObject *tob, char* string) {
+void GlhTextObjectSetText(GlhTextObject *tob, char* string) {
     char oldState[strlen(tob->_text) + 1];
     strcpy(oldState, tob->_text);
     int strl = strlen(string) + 1;
@@ -1082,12 +1067,12 @@ void GlhTextObjectSetText(struct GlhTextObject *tob, char* string) {
     GlhTextObjectUpdateMesh(tob, oldState);
 }
 
-char* GlhTextObjectGetText(struct GlhTextObject *tob) {
+char* GlhTextObjectGetText(GlhTextObject *tob) {
     return tob->_text;
 }
 
 // transforms can be NULL
-void GlhInitTextObject(struct GlhTextObject *tob, char* string, struct GlhFont *font, vec4 color, vec4 backgroundColor, struct GlhTransforms *tsf) {
+void GlhInitTextObject(GlhTextObject *tob, char* string, GlhFont *font, vec4 color, vec4 backgroundColor, GlhTransforms *tsf) {
     tob->type = text;
     tob->font = font;
     tob->glyphProgram = &GlobalShaders.glyphs;
@@ -1158,13 +1143,13 @@ void GlhInitTextObject(struct GlhTextObject *tob, char* string, struct GlhFont *
     GlhTextObjectSetText(tob, string);
 }
 
-void GlhFreeTextObject(struct GlhTextObject *tob) {
+void GlhFreeTextObject(GlhTextObject *tob) {
     vector_free(tob->verticies);
     vector_free(tob->texCoords);
     free(tob->_text);
 }
 
-void GlhInitComputeShader(struct GlhComputeShader *cs, char* filename) {
+void GlhInitComputeShader(GlhComputeShader *cs, char* filename) {
     GLuint shader;
     loadShader(filename, GL_COMPUTE_SHADER, &shader);
     cs->program = glCreateProgram();
@@ -1173,7 +1158,7 @@ void GlhInitComputeShader(struct GlhComputeShader *cs, char* filename) {
     glLinkProgram(cs->program);
 }
 
-void GlhRunComputeShader(struct GlhComputeShader *cs, GLuint inputTexture, GLuint outputTexture, GLenum sizedInFormat, GLenum sizedOutFormat, int workGroupsWidth, int workGroupsHeight) {
+void GlhRunComputeShader(GlhComputeShader *cs, GLuint inputTexture, GLuint outputTexture, GLenum sizedInFormat, GLenum sizedOutFormat, int workGroupsWidth, int workGroupsHeight) {
     glUseProgram(cs->program);
     glBindImageTexture(1, outputTexture, 0, GL_FALSE, 0, GL_WRITE_ONLY, sizedOutFormat);
     glBindImageTexture(0, inputTexture, 0, GL_FALSE, 0, GL_READ_ONLY, sizedInFormat);
@@ -1182,15 +1167,15 @@ void GlhRunComputeShader(struct GlhComputeShader *cs, GLuint inputTexture, GLuin
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 }
 
-int loadTexture(GLuint *texture, char* filename, bool alpha) {
+int loadTexture(GLuint *texture, char* filename, bool alpha, GLenum interpolation) {
     // create, bind texture and set parameters
     glGenTextures(1, texture);
     glBindTexture(GL_TEXTURE_2D, *texture);
     set_opengl_label(GL_TEXTURE, *texture, "TEXTURE");
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, interpolation);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, interpolation);
     // read file and get width height and channels
     int width, height, nrChannels;
     // flip image because opengl use bottom left corner origin instead of top left

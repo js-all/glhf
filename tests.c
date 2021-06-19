@@ -73,7 +73,7 @@ int main() {
     vector_print_as_int(v);
     printf("\n\n");
     printf("8: testing splice\nsplicing from index 3 for 2 element\n");
-    vector_splice(&v, 3, 2);
+    vector_splice(&v, 3, 2, NULL);
     printf("new vector size: %i\nvector state: ", v.size);
     vector_print_as_int(v);
     printf("\n\n");
